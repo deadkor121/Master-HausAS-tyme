@@ -1,0 +1,87 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  fullName     String
+  role         String   @default("manager")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Order {
+  id             String   @id @default(cuid())
+  orderNumber    String   @unique
+  title          String
+  status         String   @default("planned")
+  budgetTotalOre Int
+  deadlineDate   DateTime
+  payments       Payment[]
+  timeEntries    TimeEntry[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model Worker {
+  id            String   @id @default(cuid())
+  fullName      String
+  role          String
+  hourlyRateOre Int
+  skillTags     String[]
+  brigadeName   String?
+  isActive      Boolean  @default(true)
+  timeEntries   TimeEntry[]
+  workLogs      WorkLog[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Payment {
+  id         String   @id @default(cuid())
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  amountOre  Int
+  month      String
+  createdAt  DateTime @default(now())
+}
+
+model Expense {
+  id         String   @id @default(cuid())
+  category   String
+  amountOre  Int
+  month      String
+  createdAt  DateTime @default(now())
+}
+
+model TimeEntry {
+  id            String   @id @default(cuid())
+  workerId      String
+  worker        Worker   @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  orderId       String
+  order         Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  month         String
+  regularHours  Int
+  overtimeHours Int
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model WorkLog {
+  id           String   @id @default(cuid())
+  workerId     String
+  worker       Worker   @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  workDate     DateTime
+  startedAt    DateTime
+  endedAt      DateTime
+  totalMinutes Int
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
