@@ -853,5 +853,7 @@ if (isDirectExecution) {
   });
 }
 
-// Export the Express app as default for Vercel/Serverless (required by platform)
-export default app;
+// Export a default handler function for Vercel/Serverless (explicit function expected)
+export default function handler(req: express.Request, res: express.Response) {
+  return app(req, res);
+}
