@@ -1,9 +1,10 @@
 import axios from 'axios';
 
+const API_BASE = import.meta.env.VITE_API_URL ?? '';
 const ACCESS_TOKEN_KEY = 'accessToken';
 
 async function loginDemoUser() {
-  const loginResponse = await axios.post('/api/v1/auth/login', {
+  const loginResponse = await axios.post(`${API_BASE}/api/v1/auth/login`, {
     email: 'admin@masterhaus.no',
     password: 'Masterhaus123!'
   });
@@ -15,7 +16,7 @@ async function loginDemoUser() {
 
 async function isTokenStillValid(token: string) {
   try {
-    await axios.get('/api/v1/orders', {
+    await axios.get(`${API_BASE}/api/v1/orders`, {
       headers: { Authorization: `Bearer ${token}` }
     });
     return true;

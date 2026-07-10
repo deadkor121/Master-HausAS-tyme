@@ -51,7 +51,7 @@ export default function WorkersPage() {
 
   const loadOrders = async () => {
     const token = await ensureDemoAccessToken();
-    const response = await axios.get('/api/v1/orders', {
+    const response = await axios.get(`${API_BASE}/api/v1/orders`, {
       headers: { Authorization: `Bearer ${token}` }
     });
     setOrders(response.data.items ?? []);
@@ -59,7 +59,7 @@ export default function WorkersPage() {
 
   const loadWorkers = async () => {
     const token = await ensureDemoAccessToken();
-    const response = await axios.get('/api/v1/workers', {
+    const response = await axios.get(`${API_BASE}/api/v1/workers`, {
       headers: { Authorization: `Bearer ${token}` }
     });
     setWorkers(response.data.items ?? []);
@@ -81,10 +81,10 @@ export default function WorkersPage() {
   const loadWorkerTimeData = async (worker: Worker, month = selectedMonth) => {
     const token = await ensureDemoAccessToken();
     const [salaryResponse, entriesResponse] = await Promise.all([
-      axios.get(`/api/v1/workers/${worker.id}/salary?month=${month}`, {
+      axios.get(`${API_BASE}/api/v1/workers/${worker.id}/salary?month=${month}`, {
         headers: { Authorization: `Bearer ${token}` }
       }),
-      axios.get(`/api/v1/workers/${worker.id}/time-entries?month=${month}`, {
+      axios.get(`${API_BASE}/api/v1/workers/${worker.id}/time-entries?month=${month}`, {
         headers: { Authorization: `Bearer ${token}` }
       })
     ]);
@@ -95,7 +95,7 @@ export default function WorkersPage() {
 
   const deleteWorker = async (workerId: string) => {
     const token = await ensureDemoAccessToken();
-    await axios.delete(`/api/v1/workers/${workerId}`, {
+    await axios.delete(`${API_BASE}/api/v1/workers/${workerId}`, {
       headers: { Authorization: `Bearer ${token}` }
     });
     if (editingWorker?.id === workerId) {
@@ -109,7 +109,7 @@ export default function WorkersPage() {
 
   const deleteTimeEntry = async (timeEntryId: string) => {
     const token = await ensureDemoAccessToken();
-    await axios.delete(`/api/v1/time-entries/${timeEntryId}`, {
+    await axios.delete(`${API_BASE}/api/v1/time-entries/${timeEntryId}`, {
       headers: { Authorization: `Bearer ${token}` }
     });
     setEditingTimeEntry(null);

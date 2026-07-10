@@ -66,11 +66,11 @@ export default function FinanceEntryForm({ kind, orders = [], editingEntry, onSa
       : { category: form.category, amountOre: parseNokInputToOre(form.amountNok), month: form.month };
 
     if (editingEntry) {
-      await axios.put(`/api/v1/${kind}/${editingEntry.id}`, payload, {
+      await axios.put(`${API_BASE}/api/v1/${kind}/${editingEntry.id}`, payload, {
         headers: { Authorization: `Bearer ${token}` }
       });
     } else {
-      await axios.post(`/api/v1/${kind}`, payload, {
+      await axios.post(`${API_BASE}/api/v1/${kind}`, payload, {
         headers: { Authorization: `Bearer ${token}` }
       });
     }

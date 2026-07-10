@@ -25,7 +25,7 @@ export default function AdminDashboardPage() {
   useEffect(() => {
     const loadDashboard = async () => {
       const token = await ensureDemoAccessToken();
-      const response = await axios.get('/api/v1/dashboard/live-overview', {
+      const response = await axios.get(`${API_BASE}/api/v1/dashboard/live-overview`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setOrders(response.data.orders ?? []);

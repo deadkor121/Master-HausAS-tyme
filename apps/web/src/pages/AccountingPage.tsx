@@ -47,16 +47,16 @@ export default function AccountingPage() {
   const loadReport = async () => {
     const token = await ensureDemoAccessToken();
     const [reportResponse, paymentsResponse, expensesResponse, ordersResponse] = await Promise.all([
-      axios.get('/api/v1/finance/monthly-report?month=2026-07', {
+      axios.get(`${API_BASE}/api/v1/finance/monthly-report?month=2026-07`, {
         headers: { Authorization: `Bearer ${token}` }
       }),
-      axios.get('/api/v1/payments?month=2026-07', {
+      axios.get(`${API_BASE}/api/v1/payments?month=2026-07`, {
         headers: { Authorization: `Bearer ${token}` }
       }),
-      axios.get('/api/v1/expenses?month=2026-07', {
+      axios.get(`${API_BASE}/api/v1/expenses?month=2026-07`, {
         headers: { Authorization: `Bearer ${token}` }
       }),
-      axios.get('/api/v1/orders', {
+      axios.get(`${API_BASE}/api/v1/orders`, {
         headers: { Authorization: `Bearer ${token}` }
       })
     ]);
@@ -72,7 +72,7 @@ export default function AccountingPage() {
 
   const deleteEntry = async (kind: 'payments' | 'expenses', id: string) => {
     const token = await ensureDemoAccessToken();
-    await axios.delete(`/api/v1/${kind}/${id}`, {
+    await axios.delete(`${API_BASE}/api/v1/${kind}/${id}`, {
       headers: { Authorization: `Bearer ${token}` }
     });
     if (kind === 'payments' && editingPayment?.id === id) {

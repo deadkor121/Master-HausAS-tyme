@@ -16,7 +16,7 @@ export default function OrdersPage() {
 
   const loadOrders = async () => {
     const token = await ensureDemoAccessToken();
-    const response = await axios.get('/api/v1/orders', {
+    const response = await axios.get(`${API_BASE}/api/v1/orders`, {
       headers: { Authorization: `Bearer ${token}` }
     });
     setOrders(response.data.items ?? []);

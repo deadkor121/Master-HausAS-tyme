@@ -67,11 +67,11 @@ export default function TimeEntryForm({ workerId, orders, editingEntry, month, o
     };
 
     if (editingEntry) {
-      await axios.put(`/api/v1/time-entries/${editingEntry.id}`, payload, {
+      await axios.put(`${API_BASE}/api/v1/time-entries/${editingEntry.id}`, payload, {
         headers: { Authorization: `Bearer ${token}` }
       });
     } else {
-      await axios.post(`/api/v1/workers/${workerId}/time-entries`, payload, {
+      await axios.post(`${API_BASE}/api/v1/workers/${workerId}/time-entries`, payload, {
         headers: { Authorization: `Bearer ${token}` }
       });
     }

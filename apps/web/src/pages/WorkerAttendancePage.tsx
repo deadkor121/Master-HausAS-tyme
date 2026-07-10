@@ -82,7 +82,7 @@ export default function WorkerAttendancePage() {
 
   const loadWorkers = async () => {
     const token = await ensureDemoAccessToken();
-    const response = await axios.get('/api/v1/workers', {
+    const response = await axios.get(`${API_BASE}/api/v1/workers`, {
       headers: { Authorization: `Bearer ${token}` }
     });
 
@@ -95,7 +95,7 @@ export default function WorkerAttendancePage() {
 
   const loadWorkLogs = async (workerId: string, month: string) => {
     const token = await ensureDemoAccessToken();
-    const response = await axios.get(`/api/v1/workers/${workerId}/work-logs?month=${month}`, {
+    const response = await axios.get(`${API_BASE}/api/v1/workers/${workerId}/work-logs?month=${month}`, {
       headers: { Authorization: `Bearer ${token}` }
     });
     setWorkLogs(response.data.items ?? []);
@@ -145,11 +145,11 @@ export default function WorkerAttendancePage() {
       };
 
       if (editingLogId) {
-        await axios.put(`/api/v1/work-logs/${editingLogId}`, payload, {
+        await axios.put(`${API_BASE}/api/v1/work-logs/${editingLogId}`, payload, {
           headers: { Authorization: `Bearer ${token}` }
         });
       } else {
-        await axios.post(`/api/v1/workers/${selectedWorkerId}/work-logs`, payload, {
+        await axios.post(`${API_BASE}/api/v1/workers/${selectedWorkerId}/work-logs`, payload, {
           headers: { Authorization: `Bearer ${token}` }
         });
       }
@@ -181,7 +181,7 @@ export default function WorkerAttendancePage() {
 
   const removeLog = async (logId: string) => {
     const token = await ensureDemoAccessToken();
-    await axios.delete(`/api/v1/work-logs/${logId}`, {
+    await axios.delete(`${API_BASE}/api/v1/work-logs/${logId}`, {
       headers: { Authorization: `Bearer ${token}` }
     });
     if (editingLogId === logId) {

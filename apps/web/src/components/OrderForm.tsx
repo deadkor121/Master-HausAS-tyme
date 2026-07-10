@@ -27,7 +27,7 @@ export default function OrderForm({ onCreated }: Props) {
 
     try {
       const token = await ensureDemoAccessToken();
-      await axios.post('/api/v1/orders', {
+      await axios.post(`${API_BASE}/api/v1/orders`, {
         ...form,
         budgetTotalOre: parseNokInputToOre(form.budgetTotalNok)
       }, {

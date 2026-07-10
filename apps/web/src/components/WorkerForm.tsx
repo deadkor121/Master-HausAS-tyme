@@ -60,11 +60,11 @@ export default function WorkerForm({ editingWorker, onSaved, onCancel }: Props) 
     };
 
     if (editingWorker) {
-      await axios.put(`/api/v1/workers/${editingWorker.id}`, payload, {
+      await axios.put(`${API_BASE}/api/v1/workers/${editingWorker.id}`, payload, {
         headers: { Authorization: `Bearer ${token}` }
       });
     } else {
-      await axios.post('/api/v1/workers', payload, {
+      await axios.post(`${API_BASE}/api/v1/workers`, payload, {
         headers: { Authorization: `Bearer ${token}` }
       });
     }
