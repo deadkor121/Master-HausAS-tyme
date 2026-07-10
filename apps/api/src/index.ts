@@ -843,10 +843,15 @@ const isDirectExecution = (() => {
   return import.meta.url === pathToFileURL(process.argv[1]).href;
 })();
 
+// create the app instance for both direct execution and serverless exposure
+const app = createApp();
+
 if (isDirectExecution) {
-  const app = createApp();
   const port = Number(process.env.PORT ?? 3001);
   app.listen(port, () => {
     console.log(`API listening on port ${port}`);
   });
 }
+
+// Export the Express app as default for Vercel/Serverless (required by platform)
+export default app;
