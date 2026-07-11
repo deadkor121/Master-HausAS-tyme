@@ -132,10 +132,14 @@ async function seedData() {
   }
 }
 
-try {
-  await seedData();
-} catch {
-  // ignore seeding errors in test/dev environments when no database is configured
+const shouldSeedData = process.env.NODE_ENV !== 'production' && process.env.VERCEL !== '1';
+
+if (shouldSeedData) {
+  try {
+    await seedData();
+  } catch {
+    // ignore seeding errors in local dev/test environments when no database is configured
+  }
 }
 
 const orderCreateSchema = z.object({
@@ -232,6 +236,27 @@ export function createApp() {
 
   app.use(cors());
   app.use(express.json());
+
+  app.use((err: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (err instanceof SyntaxError && 'body' in (err as object)) {
+      res.status(400).json({ error: 'Invalid JSON body' });
+      return;
+    }
+
+    next(err);
+  });
+
+  app.get('/', (_req, res) => {
+    res.status(200).json({
+      service: 'masterhaus-api',
+      status: 'ok',
+      health: '/api/v1/health'
+    });
+  });
+
+  app.get('/favicon.ico', (_req, res) => {
+    res.status(204).end();
+  });
 
   app.get('/api/v1/health', (_req, res) => {
     res.json({ status: 'ok', service: 'masterhaus-api' });
