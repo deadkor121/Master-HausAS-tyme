@@ -1,6 +1,6 @@
 import axios from 'axios';
+import { API_BASE } from './apiBase';
 
-const API_BASE = import.meta.env.VITE_API_URL ?? '';
 const ACCESS_TOKEN_KEY = 'accessToken';
 
 async function loginDemoUser() {

@@ -1,4 +1,6 @@
-// Initialize global API_BASE from Vite environment
-(globalThis as any).API_BASE = import.meta.env.VITE_API_URL ?? '';
+import { API_BASE } from './apiBase';
+
+// Initialize global API_BASE from a normalized Vite environment value.
+(globalThis as any).API_BASE = API_BASE;
 
 export {};
