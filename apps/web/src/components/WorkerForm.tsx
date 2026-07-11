@@ -30,6 +30,8 @@ const emptyForm = {
 
 export default function WorkerForm({ editingWorker, onSaved, onCancel }: Props) {
   const [form, setForm] = useState(emptyForm);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!editingWorker) {
@@ -49,28 +51,42 @@ export default function WorkerForm({ editingWorker, onSaved, onCancel }: Props) 
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    const token = await ensureDemoAccessToken();
-    const payload = {
-      fullName: form.fullName,
-      role: form.role,
-      hourlyRateOre: parseNokInputToOre(form.hourlyRateNok),
-      skillTags: form.skillTags.split(',').map((item) => item.trim()).filter(Boolean),
-      brigadeName: form.brigadeName || undefined,
-      isActive: form.isActive
-    };
+    setIsSubmitting(true);
+    setSubmitError(null);
 
-    if (editingWorker) {
-      await axios.put(`${API_BASE}/api/v1/workers/${editingWorker.id}`, payload, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-    } else {
-      await axios.post(`${API_BASE}/api/v1/workers`, payload, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+    try {
+      const token = await ensureDemoAccessToken();
+      const payload = {
+        fullName: form.fullName,
+        role: form.role,
+        hourlyRateOre: parseNokInputToOre(form.hourlyRateNok),
+        skillTags: form.skillTags.split(',').map((item) => item.trim()).filter(Boolean),
+        brigadeName: form.brigadeName || undefined,
+        isActive: form.isActive
+      };
+
+      if (editingWorker) {
+        await axios.put(`${API_BASE}/api/v1/workers/${editingWorker.id}`, payload, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+      } else {
+        await axios.post(`${API_BASE}/api/v1/workers`, payload, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+      }
+
+      setForm(emptyForm);
+      await onSaved();
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        const apiError = typeof error.response?.data?.error === 'string' ? error.response?.data?.error : null;
+        setSubmitError(apiError ?? `Request failed (${error.response?.status ?? 'network'})`);
+      } else {
+        setSubmitError('Failed to save worker');
+      }
+    } finally {
+      setIsSubmitting(false);
     }
-
-    setForm(emptyForm);
-    onSaved();
   };
 
   return (
@@ -112,8 +128,9 @@ export default function WorkerForm({ editingWorker, onSaved, onCancel }: Props) 
         <input type="checkbox" checked={form.isActive} onChange={(event) => setForm({ ...form, isActive: event.target.checked })} />
         Active worker
       </label>
-      <button className="rounded bg-cyan-500 px-3 py-2 font-medium text-slate-950" type="submit">
-        {editingWorker ? 'Save worker' : 'Create worker'}
+      {submitError ? <p className="text-sm text-rose-300">{submitError}</p> : null}
+      <button className="rounded bg-cyan-500 px-3 py-2 font-medium text-slate-950 disabled:cursor-not-allowed disabled:opacity-70" type="submit" disabled={isSubmitting}>
+        {isSubmitting ? 'Saving...' : editingWorker ? 'Save worker' : 'Create worker'}
       </button>
     </form>
   );
