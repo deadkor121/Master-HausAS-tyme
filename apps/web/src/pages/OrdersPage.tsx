@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import axios from 'axios';
 import OrderForm from '../components/OrderForm';
 import { ensureAccessToken } from '../lib/auth';
+import AdminShell from '../components/AdminShell';
 
 type Order = {
   id: string;
@@ -15,7 +15,7 @@ export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
 
   const loadOrders = async () => {
-    const token = await ensureAccessToken();
+    const token = ensureAccessToken();
     const response = await axios.get(`${API_BASE}/api/v1/orders`, {
       headers: { Authorization: `Bearer ${token}` }
     });
@@ -27,41 +27,33 @@ export default function OrdersPage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-slate-950 p-8 text-slate-100">
-      <div className="mx-auto max-w-6xl">
-        <div className="mb-6 flex items-center justify-between">
-          <div>
-            <p className="text-sm uppercase tracking-[0.3em] text-cyan-400">Orders</p>
-            <h1 className="text-3xl font-semibold">Project management</h1>
-          </div>
-          <Link to="/" className="rounded border border-slate-700 px-3 py-2 text-sm">Back home</Link>
-        </div>
-
-        <div className="mb-6">
+    <AdminShell eyebrow="Orders" title="Управление заказами" description="Создание и просмотр объектов в более чистом интерфейсе с акцентом на быстрые действия.">
+      <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
+        <div className="rounded-[2rem] border border-white/10 bg-white/5 p-5 md:p-6">
           <OrderForm onCreated={loadOrders} />
         </div>
 
-        <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/70">
+        <div className="overflow-hidden rounded-[2rem] border border-white/10 bg-white/5">
           <table className="min-w-full text-left text-sm">
-            <thead className="bg-slate-800/80 text-slate-300">
+            <thead className="bg-white/5 text-slate-300">
               <tr>
-                <th className="px-4 py-3">Order</th>
-                <th className="px-4 py-3">Title</th>
-                <th className="px-4 py-3">Status</th>
+                <th className="px-5 py-4">Order</th>
+                <th className="px-5 py-4">Title</th>
+                <th className="px-5 py-4">Status</th>
               </tr>
             </thead>
             <tbody>
               {orders.map((order) => (
-                <tr key={order.id} className="border-t border-slate-800">
-                  <td className="px-4 py-3 font-medium text-cyan-300">{order.orderNumber}</td>
-                  <td className="px-4 py-3">{order.title}</td>
-                  <td className="px-4 py-3 capitalize">{order.status}</td>
+                <tr key={order.id} className="border-t border-white/10">
+                  <td className="px-5 py-4 font-medium text-cyan-300">{order.orderNumber}</td>
+                  <td className="px-5 py-4">{order.title}</td>
+                  <td className="px-5 py-4 capitalize text-slate-400">{order.status}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       </div>
-    </div>
+    </AdminShell>
   );
 }

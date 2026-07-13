@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { ensureAccessToken, describeAxiosError } from '../lib/auth';
 import { useAuth } from '../lib/AuthContext';
+import WorkerShell from '../components/WorkerShell';
+import AdminShell from '../components/AdminShell';
 
 type Worker = {
   id: string;
@@ -49,19 +50,13 @@ function buildCalendarDays(month: string) {
   const mondayFirstOffset = (firstDay.getDay() + 6) % 7;
   const cells: Array<Date | null> = [];
 
-  for (let index = 0; index < mondayFirstOffset; index += 1) {
-    cells.push(null);
-  }
-
-  for (let day = 1; day <= daysInMonth; day += 1) {
-    cells.push(new Date(year, monthIndex - 1, day));
-  }
-
+  for (let index = 0; index < mondayFirstOffset; index += 1) cells.push(null);
+  for (let day = 1; day <= daysInMonth; day += 1) cells.push(new Date(year, monthIndex - 1, day));
   return cells;
 }
 
 export default function WorkerAttendancePage() {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const today = new Date();
   const defaultMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
   const defaultDate = `${defaultMonth}-${String(today.getDate()).padStart(2, '0')}`;
@@ -114,10 +109,7 @@ export default function WorkerAttendancePage() {
   }, []);
 
   useEffect(() => {
-    if (!selectedWorkerId) {
-      return;
-    }
-
+    if (!selectedWorkerId) return;
     loadWorkLogs(selectedWorkerId, selectedMonth).catch((error) => setFeedback({ type: 'error', text: describeAxiosError(error) }));
   }, [selectedWorkerId, selectedMonth]);
 
@@ -170,11 +162,7 @@ export default function WorkerAttendancePage() {
 
   const startEditing = (log: WorkLog) => {
     setEditingLogId(log.id);
-    setForm({
-      workDate: getDateKey(log.workDate),
-      startedAt: formatTimeLabel(log.startedAt),
-      endedAt: formatTimeLabel(log.endedAt)
-    });
+    setForm({ workDate: getDateKey(log.workDate), startedAt: formatTimeLabel(log.startedAt), endedAt: formatTimeLabel(log.endedAt) });
     setFeedback(null);
   };
 
@@ -184,163 +172,117 @@ export default function WorkerAttendancePage() {
       await axios.delete(`${API_BASE}/api/v1/work-logs/${logId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      if (editingLogId === logId) {
-        setEditingLogId(null);
-      }
+      if (editingLogId === logId) setEditingLogId(null);
       await loadWorkLogs(selectedWorkerId, selectedMonth);
     } catch (error) {
       setFeedback({ type: 'error', text: describeAxiosError(error) });
     }
   };
 
-  return (
-    <div className="min-h-screen bg-slate-950 p-8 text-slate-100">
-      <div className="mx-auto max-w-6xl">
-        <div className="mb-6 flex items-center justify-between">
-          <div>
-            <p className="text-sm uppercase tracking-[0.3em] text-cyan-400">Attendance</p>
-            <h1 className="text-3xl font-semibold">Учёт рабочего времени</h1>
-            <p className="mt-3 max-w-3xl text-sm text-slate-400">
-              {isWorkerOnly
-                ? 'Страница работника: здесь доступен только собственный учёт времени.'
-                : 'Страница админа: можно просматривать и редактировать учёт времени сотрудников.'}
-            </p>
-          </div>
-          <div className="flex gap-3">
-            {user?.role === 'admin' ? <Link to="/" className="rounded border border-slate-700 px-3 py-2 text-sm">На главную</Link> : null}
-            <button onClick={logout} className="rounded border border-rose-800 px-3 py-2 text-sm text-rose-200">Выйти</button>
-          </div>
+  const content = (
+    <>
+      <div className="grid gap-4 md:grid-cols-3">
+        <div className="rounded-[1.75rem] border border-white/10 bg-white/5 p-5">
+          <p className="text-xs uppercase tracking-[0.25em] text-slate-500">Рабочих дней</p>
+          <p className="mt-3 text-4xl font-semibold text-cyan-300">{workedDaysCount}</p>
         </div>
-
-        <div className="mb-6 grid gap-4 md:grid-cols-3">
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
-            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Рабочих дней</p>
-            <p className="mt-2 text-3xl font-semibold text-cyan-300">{workedDaysCount}</p>
-          </div>
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
-            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Всего времени за месяц</p>
-            <p className="mt-2 text-3xl font-semibold text-emerald-300">{formatMinutes(totalWorkedMinutes)}</p>
-          </div>
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
-            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Месяц</p>
-            <input className="mt-2 w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm" type="month" value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)} />
-          </div>
+        <div className="rounded-[1.75rem] border border-white/10 bg-white/5 p-5">
+          <p className="text-xs uppercase tracking-[0.25em] text-slate-500">Всего за месяц</p>
+          <p className="mt-3 text-4xl font-semibold text-emerald-300">{formatMinutes(totalWorkedMinutes)}</p>
         </div>
+        <div className="rounded-[1.75rem] border border-white/10 bg-white/5 p-5">
+          <p className="text-xs uppercase tracking-[0.25em] text-slate-500">Месяц</p>
+          <input className="mt-3 w-full rounded-2xl border border-white/10 bg-slate-950/60 px-3 py-3 text-sm" type="month" value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)} />
+        </div>
+      </div>
 
-        <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
-          <div className="space-y-6">
-            <form onSubmit={submit} className="grid gap-3 rounded-2xl border border-slate-800 bg-slate-900/70 p-4 text-sm">
-              <h2 className="text-lg font-semibold">{editingLogId ? 'Редактировать смену' : 'Отметить смену'}</h2>
+      <div className="mt-6 grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+        <div className="space-y-6">
+          <form onSubmit={submit} className="grid gap-4 rounded-[2rem] border border-white/10 bg-white/5 p-5 md:p-6">
+            <div>
+              <h2 className="text-2xl font-semibold">{editingLogId ? 'Редактировать смену' : 'Добавить смену'}</h2>
+              <p className="mt-2 text-sm text-slate-400">{isWorkerOnly ? 'Личный табель без лишних админских блоков.' : 'Админский режим для управления табелями сотрудников.'}</p>
+            </div>
 
-              {feedback ? (
-                <div className={`rounded border px-3 py-2 text-sm ${feedback.type === 'success' ? 'border-emerald-700/40 bg-emerald-500/10 text-emerald-200' : 'border-rose-700/40 bg-rose-500/10 text-rose-200'}`}>
-                  {feedback.text}
-                </div>
-              ) : null}
+            {feedback ? <div className={`rounded-2xl border px-4 py-3 text-sm ${feedback.type === 'success' ? 'border-emerald-700/40 bg-emerald-500/10 text-emerald-200' : 'border-rose-700/40 bg-rose-500/10 text-rose-200'}`}>{feedback.text}</div> : null}
 
+            <div className="grid gap-1">
+              <label className="text-sm text-slate-300">Сотрудник</label>
+              <select className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3" value={selectedWorkerId} onChange={(event) => setSelectedWorkerId(event.target.value)} disabled={isWorkerOnly}>
+                {workers.map((worker) => <option key={worker.id} value={worker.id}>{worker.fullName} ({worker.role})</option>)}
+              </select>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-3">
+              <div className="grid gap-1 md:col-span-1">
+                <label className="text-sm text-slate-300">Дата</label>
+                <input className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3" type="date" value={form.workDate} onChange={(event) => setForm({ ...form, workDate: event.target.value })} required />
+              </div>
               <div className="grid gap-1">
-                <label className="text-slate-300">Сотрудник</label>
-                <select
-                  className="rounded border border-slate-700 bg-slate-950 px-3 py-2"
-                  value={selectedWorkerId}
-                  onChange={(event) => setSelectedWorkerId(event.target.value)}
-                  disabled={isWorkerOnly}
-                >
-                  {workers.map((worker) => (
-                    <option key={worker.id} value={worker.id}>{worker.fullName} ({worker.role})</option>
-                  ))}
-                </select>
+                <label className="text-sm text-slate-300">Начало</label>
+                <input className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3" type="time" value={form.startedAt} onChange={(event) => setForm({ ...form, startedAt: event.target.value })} required />
               </div>
-
               <div className="grid gap-1">
-                <label className="text-slate-300">День</label>
-                <input className="rounded border border-slate-700 bg-slate-950 px-3 py-2" type="date" value={form.workDate} onChange={(event) => setForm({ ...form, workDate: event.target.value })} required />
+                <label className="text-sm text-slate-300">Конец</label>
+                <input className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3" type="time" value={form.endedAt} onChange={(event) => setForm({ ...form, endedAt: event.target.value })} required />
               </div>
+            </div>
 
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="grid gap-1">
-                  <label className="text-slate-300">Начало</label>
-                  <input className="rounded border border-slate-700 bg-slate-950 px-3 py-2" type="time" value={form.startedAt} onChange={(event) => setForm({ ...form, startedAt: event.target.value })} required />
-                </div>
-                <div className="grid gap-1">
-                  <label className="text-slate-300">Конец</label>
-                  <input className="rounded border border-slate-700 bg-slate-950 px-3 py-2" type="time" value={form.endedAt} onChange={(event) => setForm({ ...form, endedAt: event.target.value })} required />
-                </div>
-              </div>
+            <div className="flex flex-wrap gap-3">
+              <button className="rounded-2xl bg-cyan-400 px-4 py-3 font-semibold text-slate-950 disabled:opacity-70" type="submit" disabled={isSubmitting}>{isSubmitting ? 'Сохраняю...' : editingLogId ? 'Сохранить изменения' : 'Добавить смену'}</button>
+              {editingLogId ? <button type="button" className="rounded-2xl border border-white/10 px-4 py-3" onClick={() => { setEditingLogId(null); setForm({ workDate: defaultDate, startedAt: '08:00', endedAt: '16:00' }); setFeedback(null); }}>Отмена</button> : null}
+            </div>
+          </form>
 
-              <div className="flex gap-3">
-                <button className="rounded bg-cyan-500 px-3 py-2 font-medium text-slate-950 disabled:cursor-not-allowed disabled:opacity-70" type="submit" disabled={isSubmitting}>
-                  {isSubmitting ? 'Сохраняю...' : editingLogId ? 'Сохранить' : 'Добавить смену'}
-                </button>
-                {editingLogId ? (
-                  <button
-                    type="button"
-                    className="rounded border border-slate-700 px-3 py-2"
-                    onClick={() => {
-                      setEditingLogId(null);
-                      setForm({ workDate: defaultDate, startedAt: '08:00', endedAt: '16:00' });
-                      setFeedback(null);
-                    }}
-                  >
-                    Отмена
-                  </button>
-                ) : null}
-              </div>
-            </form>
-
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
-              <h2 className="text-lg font-semibold">Журнал смен</h2>
-              <div className="mt-4 space-y-3">
-                {workLogs.map((log) => (
-                  <div key={log.id} className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950/60 p-4 text-sm">
-                    <div>
-                      <p className="font-medium text-cyan-300">{formatDateLabel(log.workDate)}</p>
-                      <p className="text-slate-400">{formatTimeLabel(log.startedAt)} - {formatTimeLabel(log.endedAt)}</p>
-                      <p className="text-slate-500">Потрачено: {formatMinutes(log.totalMinutes)}</p>
-                    </div>
-                    <div className="flex gap-2">
-                      <button className="rounded border border-slate-700 px-3 py-1.5" onClick={() => startEditing(log)}>Изменить</button>
-                      <button className="rounded border border-rose-700 px-3 py-1.5 text-rose-200" onClick={() => removeLog(log.id)}>Удалить</button>
-                    </div>
+          <div className="rounded-[2rem] border border-white/10 bg-white/5 p-5 md:p-6">
+            <h2 className="text-2xl font-semibold">Журнал смен</h2>
+            <div className="mt-4 space-y-3">
+              {workLogs.map((log) => (
+                <div key={log.id} className="flex flex-col gap-4 rounded-[1.5rem] border border-white/10 bg-slate-950/40 p-4 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <p className="font-medium text-cyan-300">{formatDateLabel(log.workDate)}</p>
+                    <p className="mt-1 text-sm text-slate-400">{formatTimeLabel(log.startedAt)} - {formatTimeLabel(log.endedAt)}</p>
+                    <p className="mt-1 text-sm text-slate-500">Потрачено: {formatMinutes(log.totalMinutes)}</p>
                   </div>
-                ))}
-                {workLogs.length === 0 ? <p className="text-sm text-slate-400">За выбранный месяц смен пока нет.</p> : null}
-              </div>
+                  <div className="flex gap-2">
+                    <button className="rounded-2xl border border-white/10 px-4 py-2 text-sm" onClick={() => startEditing(log)}>Изменить</button>
+                    <button className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-2 text-sm text-rose-100" onClick={() => removeLog(log.id)}>Удалить</button>
+                  </div>
+                </div>
+              ))}
+              {workLogs.length === 0 ? <p className="text-sm text-slate-400">За выбранный месяц смен пока нет.</p> : null}
             </div>
           </div>
+        </div>
 
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
-            <h2 className="text-lg font-semibold">Календарь</h2>
-            <p className="mt-2 text-sm text-slate-400">Нажми на день, чтобы быстро подставить его в форму. Дни со сменами подсвечены.</p>
-            <div className="mt-4 grid grid-cols-7 gap-2 text-center text-xs uppercase tracking-[0.2em] text-slate-500">
-              <div>Пн</div><div>Вт</div><div>Ср</div><div>Чт</div><div>Пт</div><div>Сб</div><div>Вс</div>
-            </div>
-            <div className="mt-2 grid grid-cols-7 gap-2">
-              {calendarDays.map((day, index) => {
-                if (!day) {
-                  return <div key={`empty-${index}`} className="min-h-24 rounded-xl border border-transparent" />;
-                }
-
-                const dateKey = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
-                const dayMinutes = logsByDate.get(dateKey) ?? 0;
-                const isSelected = form.workDate === dateKey;
-
-                return (
-                  <button
-                    type="button"
-                    key={dateKey}
-                    onClick={() => setForm({ ...form, workDate: dateKey })}
-                    className={`min-h-24 rounded-xl border p-3 text-left ${isSelected ? 'border-cyan-400 bg-cyan-500/10' : 'border-slate-800 bg-slate-950/50'} ${dayMinutes > 0 ? 'shadow-[inset_0_0_0_1px_rgba(16,185,129,0.45)]' : ''}`}
-                  >
-                    <div className="text-sm font-medium text-slate-100">{day.getDate()}</div>
-                    {dayMinutes > 0 ? <div className="mt-3 text-xs text-emerald-300">{formatMinutes(dayMinutes)}</div> : <div className="mt-3 text-xs text-slate-500">Нет смены</div>}
-                  </button>
-                );
-              })}
-            </div>
+        <div className="rounded-[2rem] border border-white/10 bg-white/5 p-5 md:p-6">
+          <h2 className="text-2xl font-semibold">Календарь</h2>
+          <p className="mt-2 text-sm text-slate-400">Нажми на день, чтобы быстро подставить дату в форму. Отработанные дни подсвечиваются и показывают суммарное время.</p>
+          <div className="mt-5 grid grid-cols-7 gap-2 text-center text-xs uppercase tracking-[0.2em] text-slate-500">
+            <div>Пн</div><div>Вт</div><div>Ср</div><div>Чт</div><div>Пт</div><div>Сб</div><div>Вс</div>
+          </div>
+          <div className="mt-3 grid grid-cols-7 gap-2">
+            {calendarDays.map((day, index) => {
+              if (!day) return <div key={`empty-${index}`} className="min-h-24 rounded-2xl border border-transparent" />;
+              const dateKey = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+              const dayMinutes = logsByDate.get(dateKey) ?? 0;
+              const isSelected = form.workDate === dateKey;
+              return (
+                <button key={dateKey} type="button" onClick={() => setForm({ ...form, workDate: dateKey })} className={`min-h-24 rounded-2xl border p-3 text-left transition ${isSelected ? 'border-cyan-400 bg-cyan-500/10' : 'border-white/10 bg-slate-950/40'} ${dayMinutes > 0 ? 'shadow-[inset_0_0_0_1px_rgba(16,185,129,0.45)]' : ''}`}>
+                  <div className="text-sm font-medium text-slate-100">{day.getDate()}</div>
+                  {dayMinutes > 0 ? <div className="mt-3 text-xs text-emerald-300">{formatMinutes(dayMinutes)}</div> : <div className="mt-3 text-xs text-slate-500">Нет смены</div>}
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
-    </div>
+    </>
+  );
+
+  return isWorkerOnly ? (
+    <WorkerShell title="Мои смены" description="Чистый личный табель: только твои рабочие записи, календарь и быстрый ввод времени.">{content}</WorkerShell>
+  ) : (
+    <AdminShell title="Учёт рабочего времени" eyebrow="Attendance" description="Админский обзор смен сотрудников с быстрым редактированием и календарём.">{content}</AdminShell>
   );
 }

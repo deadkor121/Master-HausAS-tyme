@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { ensureAccessToken } from '../lib/auth';
+import AdminShell from '../components/AdminShell';
 
 type DashboardOrder = {
   id: string;
@@ -24,7 +24,7 @@ export default function AdminDashboardPage() {
 
   useEffect(() => {
     const loadDashboard = async () => {
-      const token = await ensureAccessToken();
+      const token = ensureAccessToken();
       const response = await axios.get(`${API_BASE}/api/v1/dashboard/live-overview`, {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -36,53 +36,47 @@ export default function AdminDashboardPage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-slate-950 p-8 text-slate-100">
-      <div className="mx-auto max-w-6xl">
-        <div className="mb-6 flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-semibold">Admin Dashboard</h1>
-            <p className="mt-3 max-w-2xl text-sm text-slate-400">
-              Monitor active orders, overdue risk and workforce allocation from one place.
-            </p>
+    <AdminShell eyebrow="Live overview" title="Админ-дашборд" description="Ключевой экран для контроля активных заказов, дедлайнов и сигналов по загрузке команды.">
+      <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+        <div className="rounded-[2rem] border border-white/10 bg-white/5 p-6">
+          <h2 className="text-2xl font-semibold">Активные объекты</h2>
+          <div className="mt-5 space-y-4">
+            {orders.map((order) => (
+              <div key={order.id} className="rounded-[1.5rem] border border-white/10 bg-slate-950/40 p-5">
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <p className="font-medium text-cyan-300">{order.orderNumber}</p>
+                    <p className="mt-1 text-lg font-semibold">{order.title}</p>
+                  </div>
+                  <span className="rounded-full bg-cyan-400/15 px-3 py-1 text-xs uppercase tracking-[0.2em] text-cyan-200">{order.status}</span>
+                </div>
+                <p className="mt-3 text-sm text-slate-400">Deadline: {order.deadlineDate}</p>
+                <p className="mt-2 text-sm text-slate-500">Workers: {order.assignedWorkers.join(', ')}</p>
+              </div>
+            ))}
           </div>
-          <Link to="/" className="rounded border border-slate-700 px-3 py-2 text-sm">Back home</Link>
         </div>
 
-        <div className="mt-8 grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
-            <h2 className="text-xl font-semibold">Live overview</h2>
+        <div className="grid gap-6">
+          <div className="rounded-[2rem] border border-amber-400/20 bg-amber-400/10 p-6">
+            <h2 className="text-2xl font-semibold">Alerts</h2>
             <div className="mt-4 space-y-3">
-              {orders.map((order) => (
-                <div key={order.id} className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium text-cyan-300">{order.orderNumber}</p>
-                      <p className="text-sm text-slate-400">{order.title}</p>
-                    </div>
-                    <span className="rounded-full bg-cyan-500/20 px-3 py-1 text-xs uppercase tracking-[0.2em] text-cyan-300">
-                      {order.status}
-                    </span>
-                  </div>
-                  <p className="mt-2 text-sm text-slate-400">Deadline: {order.deadlineDate}</p>
-                  <p className="mt-2 text-sm text-slate-400">Workers: {order.assignedWorkers.join(', ')}</p>
+              {alerts.length > 0 ? alerts.map((alert) => (
+                <div key={alert.orderId} className="rounded-[1.5rem] border border-amber-400/20 bg-slate-950/30 p-4 text-sm text-amber-50">
+                  <p className="font-medium">{alert.orderNumber}</p>
+                  <p className="mt-2 text-amber-100/80">{alert.message}</p>
                 </div>
-              ))}
+              )) : <p className="text-sm text-amber-50/70">Сейчас критических алертов нет.</p>}
             </div>
           </div>
 
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
-            <h2 className="text-xl font-semibold">Alerts</h2>
-            <div className="mt-4 space-y-3">
-              {alerts.map((alert) => (
-                <div key={alert.orderId} className="rounded-xl border border-amber-700/40 bg-amber-500/10 p-4 text-sm text-amber-100">
-                  <p className="font-medium">{alert.orderNumber}</p>
-                  <p className="mt-1">{alert.message}</p>
-                </div>
-              ))}
-            </div>
+          <div className="rounded-[2rem] border border-white/10 bg-white/5 p-6">
+            <p className="text-xs uppercase tracking-[0.25em] text-slate-500">Визуальный фокус</p>
+            <h3 className="mt-3 text-2xl font-semibold">Чистый штабной экран</h3>
+            <p className="mt-3 text-sm text-slate-400">Дашборд переведён в более собранный стиль: крупные карточки, спокойный контраст и меньше ощущения “таблицы ради таблицы”.</p>
           </div>
         </div>
       </div>
-    </div>
+    </AdminShell>
   );
 }
