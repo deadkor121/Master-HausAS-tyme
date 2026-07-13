@@ -201,6 +201,10 @@ const registerSchema = z.object({
   role: z.enum(['admin', 'worker']).default('worker')
 });
 
+function toLocalDateKey(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
 function buildWorkLogData(payload: { workDate: string; startedAt: string; endedAt: string }) {
   const startedAt = new Date(`${payload.workDate}T${payload.startedAt}:00`);
   const endedAt = new Date(`${payload.workDate}T${payload.endedAt}:00`);
@@ -211,7 +215,7 @@ function buildWorkLogData(payload: { workDate: string; startedAt: string; endedA
   }
 
   return {
-    workDate: new Date(`${payload.workDate}T00:00:00`),
+    workDate: new Date(`${payload.workDate}T12:00:00`),
     startedAt,
     endedAt,
     totalMinutes
@@ -545,7 +549,7 @@ export function createApp() {
     const month = typeof req.query.month === 'string' ? req.query.month : undefined;
     const items = await prisma.workLog.findMany({ where: { workerId: worker.id } });
     const filteredItems = month
-      ? items.filter((item: { workDate: Date }) => item.workDate.toISOString().slice(0, 7) === month)
+      ? items.filter((item: { workDate: Date }) => toLocalDateKey(item.workDate).slice(0, 7) === month)
       : items;
 
     res.json({ items: filteredItems });
