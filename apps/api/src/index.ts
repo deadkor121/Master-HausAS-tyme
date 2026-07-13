@@ -1,3 +1,4 @@
+import 'express-async-errors';
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -25,11 +26,11 @@ const JWT_SECRET = process.env.JWT_SECRET ?? 'dev-secret';
 const DEMO_EMAIL = 'admin@masterhaus.no';
 const DEMO_PASSWORD = 'Masterhaus123!';
 
-async function seedData() {
+async function ensureDemoUser() {
   const existingUser = await prisma.user.findFirst({ where: { email: DEMO_EMAIL } });
   if (!existingUser) {
     const { hash } = await import('bcryptjs');
-    await prisma.user.create({
+    return prisma.user.create({
       data: {
         email: DEMO_EMAIL,
         passwordHash: await hash(DEMO_PASSWORD, 10),
@@ -37,16 +38,22 @@ async function seedData() {
         role: 'admin'
       }
     });
-  } else {
-    const passwordMatches = await compare(DEMO_PASSWORD, existingUser.passwordHash);
-    if (!passwordMatches) {
-      const { hash } = await import('bcryptjs');
-      await prisma.user.update({
-        where: { id: existingUser.id },
-        data: { passwordHash: await hash(DEMO_PASSWORD, 10) }
-      });
-    }
   }
+
+  const passwordMatches = await compare(DEMO_PASSWORD, existingUser.passwordHash);
+  if (!passwordMatches) {
+    const { hash } = await import('bcryptjs');
+    return prisma.user.update({
+      where: { id: existingUser.id },
+      data: { passwordHash: await hash(DEMO_PASSWORD, 10) }
+    });
+  }
+
+  return existingUser;
+}
+
+async function seedData() {
+  await ensureDemoUser();
 
   const orderCount = await prisma.order.count();
   if (orderCount === 0) {
@@ -269,9 +276,17 @@ export function createApp() {
       return;
     }
 
-    const user = await prisma.user.findFirst({ where: { email } });
+    let user = await prisma.user.findFirst({ where: { email } });
 
-    if (!user || !(await compare(password, user.passwordHash))) {
+    if (!user && email === DEMO_EMAIL && password === DEMO_PASSWORD) {
+      user = await ensureDemoUser();
+    }
+
+    const isPasswordValid = user
+      ? await compare(password, user.passwordHash)
+      : false;
+
+    if (!user || !isPasswordValid) {
       res.status(401).json({ error: 'Invalid credentials' });
       return;
     }
@@ -855,6 +870,15 @@ export function createApp() {
     });
 
     res.json(updated);
+  });
+
+  app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    if (error instanceof Error) {
+      res.status(500).json({ error: error.message });
+      return;
+    }
+
+    res.status(500).json({ error: 'Internal server error' });
   });
 
   return app;
