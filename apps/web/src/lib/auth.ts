@@ -14,6 +14,7 @@ export type AuthUser = {
   fullName: string;
   role: AuthRole;
   workerId?: string;
+  emailNotificationsEnabled?: boolean;
 };
 
 function setAxiosToken(token: string | null) {
@@ -111,6 +112,26 @@ export async function restoreSession(): Promise<AuthUser | null> {
     clearAuth();
     return null;
   }
+}
+
+export async function updateAuthSettings(payload: { emailNotificationsEnabled: boolean }) {
+  const token = ensureAccessToken();
+  const response = await axios.put(`${API_BASE}/api/v1/auth/settings`, payload, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  const user = response.data?.user as AuthUser;
+  if (!user) {
+    throw new Error('Settings response is incomplete');
+  }
+  persistAuth(token, user);
+  return user;
+}
+
+export async function changePassword(payload: { currentPassword: string; newPassword: string }) {
+  const token = ensureAccessToken();
+  await axios.put(`${API_BASE}/api/v1/auth/change-password`, payload, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
 }
 
 export function ensureAccessToken(): string {

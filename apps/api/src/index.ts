@@ -2,7 +2,7 @@ import 'express-async-errors';
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { compare } from 'bcryptjs';
+import { compare, hash } from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import { pathToFileURL } from 'node:url';
@@ -201,6 +201,15 @@ const registerSchema = z.object({
   role: z.enum(['admin', 'worker']).default('worker')
 });
 
+const updateSettingsSchema = z.object({
+  emailNotificationsEnabled: z.boolean()
+});
+
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(6)
+});
+
 function toLocalDateKey(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
@@ -388,11 +397,61 @@ export function createApp() {
     const accessToken = signToken({ sub: user.id, role: user.role, email: user.email, fullName: user.fullName, workerId });
     const refreshToken = signToken({ sub: user.id, type: 'refresh' });
 
-    res.json({ accessToken, refreshToken, user: { id: user.id, email: user.email, role: user.role, fullName: user.fullName, workerId } });
+    res.json({ accessToken, refreshToken, user: { id: user.id, email: user.email, role: user.role, fullName: user.fullName, workerId, emailNotificationsEnabled: user.emailNotificationsEnabled } });
   });
 
   app.get('/api/v1/auth/me', authMiddleware, async (req, res) => {
-    res.json({ user: req.user });
+    const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
+    if (!user) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    const workerId = await resolveWorkerIdForUser(user.fullName, user.role);
+    res.json({ user: { id: user.id, email: user.email, role: user.role, fullName: user.fullName, workerId, emailNotificationsEnabled: user.emailNotificationsEnabled } });
+  });
+
+  app.put('/api/v1/auth/settings', authMiddleware, async (req, res) => {
+    const parsed = updateSettingsSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.flatten() });
+      return;
+    }
+
+    const updated = await prisma.user.update({
+      where: { id: req.user!.id },
+      data: { emailNotificationsEnabled: parsed.data.emailNotificationsEnabled }
+    });
+
+    const workerId = await resolveWorkerIdForUser(updated.fullName, updated.role);
+    res.json({ user: { id: updated.id, email: updated.email, role: updated.role, fullName: updated.fullName, workerId, emailNotificationsEnabled: updated.emailNotificationsEnabled } });
+  });
+
+  app.put('/api/v1/auth/change-password', authMiddleware, async (req, res) => {
+    const parsed = changePasswordSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.flatten() });
+      return;
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
+    if (!user) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    const currentPasswordMatches = await compare(parsed.data.currentPassword, user.passwordHash);
+    if (!currentPasswordMatches) {
+      res.status(400).json({ error: 'Current password is incorrect' });
+      return;
+    }
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash: await hash(parsed.data.newPassword, 10) }
+    });
+
+    res.json({ ok: true });
   });
 
   app.get('/api/v1/orders', authMiddleware, async (req, res) => {

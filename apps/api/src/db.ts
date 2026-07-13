@@ -19,6 +19,7 @@ if (process.env.VERCEL === '1' && isLikelyPlaceholderDbUrl) {
 type PrismaLikeClient = {
   user: {
     findFirst: (args: any) => Promise<any>;
+    findUnique: (args: any) => Promise<any>;
     create: (args: any) => Promise<any>;
     update: (args: any) => Promise<any>;
   };
@@ -86,6 +87,7 @@ function createFallbackPrisma(): PrismaLikeClient {
       passwordHash: DEMO_PASSWORD_HASH,
       fullName: 'Admin User',
       role: 'admin',
+      emailNotificationsEnabled: false,
       createdAt: new Date(),
       updatedAt: new Date()
     }
@@ -169,6 +171,7 @@ function createFallbackPrisma(): PrismaLikeClient {
   return {
     user: {
       findFirst: async ({ where }: any) => users.find((user) => user.email === where?.email) ?? null,
+      findUnique: async ({ where }: any) => users.find((user) => user.id === where?.id || user.email === where?.email) ?? null,
       create: async ({ data }: any) => {
         const item = { id: `user-${Date.now()}`, createdAt: new Date(), updatedAt: new Date(), ...data };
         users.push(item);
