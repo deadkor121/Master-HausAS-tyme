@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import axios from 'axios';
-import { ensureDemoAccessToken } from '../lib/auth';
+import { ensureAccessToken, describeAxiosError, handleAuthError } from '../lib/auth';
 import { parseNokInputToOre } from '../lib/currency';
 
 type Props = {
@@ -26,7 +26,7 @@ export default function OrderForm({ onCreated }: Props) {
     setErrorMessage('');
 
     try {
-      const token = await ensureDemoAccessToken();
+      const token = await ensureAccessToken();
       await axios.post(`${API_BASE}/api/v1/orders`, {
         ...form,
         budgetTotalOre: parseNokInputToOre(form.budgetTotalNok)

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { ensureDemoAccessToken } from '../lib/auth';
+import { ensureAccessToken } from '../lib/auth';
 import { oreToNokInputValue, parseNokInputToOre } from '../lib/currency';
 
 type EntryKind = 'payments' | 'expenses';
@@ -60,7 +60,7 @@ export default function FinanceEntryForm({ kind, orders = [], editingEntry, onSa
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    const token = await ensureDemoAccessToken();
+    const token = await ensureAccessToken();
     const payload = kind === 'payments'
       ? { orderId: form.orderId, amountOre: parseNokInputToOre(form.amountNok), month: form.month }
       : { category: form.category, amountOre: parseNokInputToOre(form.amountNok), month: form.month };

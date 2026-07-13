@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
-import { ensureDemoAccessToken } from '../lib/auth';
+import { ensureAccessToken } from '../lib/auth';
 
 type DashboardOrder = {
   id: string;
@@ -24,7 +24,7 @@ export default function AdminDashboardPage() {
 
   useEffect(() => {
     const loadDashboard = async () => {
-      const token = await ensureDemoAccessToken();
+      const token = await ensureAccessToken();
       const response = await axios.get(`${API_BASE}/api/v1/dashboard/live-overview`, {
         headers: { Authorization: `Bearer ${token}` }
       });

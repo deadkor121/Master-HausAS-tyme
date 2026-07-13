@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 import OrderForm from '../components/OrderForm';
-import { ensureDemoAccessToken } from '../lib/auth';
+import { ensureAccessToken } from '../lib/auth';
 
 type Order = {
   id: string;
@@ -15,7 +15,7 @@ export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
 
   const loadOrders = async () => {
-    const token = await ensureDemoAccessToken();
+    const token = await ensureAccessToken();
     const response = await axios.get(`${API_BASE}/api/v1/orders`, {
       headers: { Authorization: `Bearer ${token}` }
     });

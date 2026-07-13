@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
-import { ensureDemoAccessToken } from '../lib/auth';
+import { ensureAccessToken } from '../lib/auth';
 import WorkerForm from '../components/WorkerForm';
 import TimeEntryForm from '../components/TimeEntryForm';
 import { formatNokFromOre } from '../lib/currency';
@@ -50,7 +50,7 @@ export default function WorkersPage() {
   const [selectedMonth, setSelectedMonth] = useState('2026-07');
 
   const loadOrders = async () => {
-    const token = await ensureDemoAccessToken();
+    const token = await ensureAccessToken();
     const response = await axios.get(`${API_BASE}/api/v1/orders`, {
       headers: { Authorization: `Bearer ${token}` }
     });
@@ -58,7 +58,7 @@ export default function WorkersPage() {
   };
 
   const loadWorkers = async () => {
-    const token = await ensureDemoAccessToken();
+    const token = await ensureAccessToken();
     const response = await axios.get(`${API_BASE}/api/v1/workers`, {
       headers: { Authorization: `Bearer ${token}` }
     });
@@ -79,7 +79,7 @@ export default function WorkersPage() {
   }, [selectedMonth]);
 
   const loadWorkerTimeData = async (worker: Worker, month = selectedMonth) => {
-    const token = await ensureDemoAccessToken();
+    const token = await ensureAccessToken();
     const [salaryResponse, entriesResponse] = await Promise.all([
       axios.get(`${API_BASE}/api/v1/workers/${worker.id}/salary?month=${month}`, {
         headers: { Authorization: `Bearer ${token}` }
@@ -94,7 +94,7 @@ export default function WorkersPage() {
   };
 
   const deleteWorker = async (workerId: string) => {
-    const token = await ensureDemoAccessToken();
+    const token = await ensureAccessToken();
     await axios.delete(`${API_BASE}/api/v1/workers/${workerId}`, {
       headers: { Authorization: `Bearer ${token}` }
     });
@@ -108,7 +108,7 @@ export default function WorkersPage() {
   };
 
   const deleteTimeEntry = async (timeEntryId: string) => {
-    const token = await ensureDemoAccessToken();
+    const token = await ensureAccessToken();
     await axios.delete(`${API_BASE}/api/v1/time-entries/${timeEntryId}`, {
       headers: { Authorization: `Bearer ${token}` }
     });

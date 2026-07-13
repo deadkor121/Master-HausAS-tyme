@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
-import { ensureDemoAccessToken } from '../lib/auth';
+import { ensureAccessToken, describeAxiosError } from '../lib/auth';
+import { useAuth } from '../lib/AuthContext';
 
 type Worker = {
   id: string;
@@ -37,10 +38,7 @@ function formatDateLabel(isoString: string) {
 }
 
 function formatTimeLabel(isoString: string) {
-  return new Date(isoString).toLocaleTimeString('nb-NO', {
-    hour: '2-digit',
-    minute: '2-digit'
-  });
+  return new Date(isoString).toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
 }
 
 function buildCalendarDays(month: string) {
@@ -63,38 +61,48 @@ function buildCalendarDays(month: string) {
 }
 
 export default function WorkerAttendancePage() {
+  const { user, logout } = useAuth();
   const today = new Date();
   const defaultMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
   const defaultDate = `${defaultMonth}-${String(today.getDate()).padStart(2, '0')}`;
 
   const [workers, setWorkers] = useState<Worker[]>([]);
-  const [selectedWorkerId, setSelectedWorkerId] = useState('');
+  const [selectedWorkerId, setSelectedWorkerId] = useState(user?.role === 'worker' ? user.workerId ?? '' : '');
   const [selectedMonth, setSelectedMonth] = useState(defaultMonth);
   const [workLogs, setWorkLogs] = useState<WorkLog[]>([]);
   const [editingLogId, setEditingLogId] = useState<string | null>(null);
-  const [form, setForm] = useState({
-    workDate: defaultDate,
-    startedAt: '08:00',
-    endedAt: '16:00'
-  });
+  const [form, setForm] = useState({ workDate: defaultDate, startedAt: '08:00', endedAt: '16:00' });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  const isWorkerOnly = user?.role === 'worker';
+
   const loadWorkers = async () => {
-    const token = await ensureDemoAccessToken();
-    const response = await axios.get(`${API_BASE}/api/v1/workers`, {
+    const token = ensureAccessToken();
+    const response = await axios.get(`${API_BASE}/api/v1/workers/directory`, {
       headers: { Authorization: `Bearer ${token}` }
     });
 
     const items = response.data.items ?? [];
     setWorkers(items);
+
+    if (isWorkerOnly) {
+      setSelectedWorkerId(user?.workerId ?? '');
+      return;
+    }
+
     if (!selectedWorkerId && items.length > 0) {
       setSelectedWorkerId(items[0].id);
     }
   };
 
   const loadWorkLogs = async (workerId: string, month: string) => {
-    const token = await ensureDemoAccessToken();
+    if (!workerId) {
+      setWorkLogs([]);
+      return;
+    }
+
+    const token = ensureAccessToken();
     const response = await axios.get(`${API_BASE}/api/v1/workers/${workerId}/work-logs?month=${month}`, {
       headers: { Authorization: `Bearer ${token}` }
     });
@@ -102,7 +110,7 @@ export default function WorkerAttendancePage() {
   };
 
   useEffect(() => {
-    loadWorkers();
+    loadWorkers().catch((error) => setFeedback({ type: 'error', text: describeAxiosError(error) }));
   }, []);
 
   useEffect(() => {
@@ -110,7 +118,7 @@ export default function WorkerAttendancePage() {
       return;
     }
 
-    loadWorkLogs(selectedWorkerId, selectedMonth);
+    loadWorkLogs(selectedWorkerId, selectedMonth).catch((error) => setFeedback({ type: 'error', text: describeAxiosError(error) }));
   }, [selectedWorkerId, selectedMonth]);
 
   const logsByDate = useMemo(() => {
@@ -137,12 +145,8 @@ export default function WorkerAttendancePage() {
     setFeedback(null);
 
     try {
-      const token = await ensureDemoAccessToken();
-      const payload = {
-        workDate: form.workDate,
-        startedAt: form.startedAt,
-        endedAt: form.endedAt
-      };
+      const token = ensureAccessToken();
+      const payload = { workDate: form.workDate, startedAt: form.startedAt, endedAt: form.endedAt };
 
       if (editingLogId) {
         await axios.put(`${API_BASE}/api/v1/work-logs/${editingLogId}`, payload, {
@@ -156,14 +160,9 @@ export default function WorkerAttendancePage() {
 
       await loadWorkLogs(selectedWorkerId, selectedMonth);
       setEditingLogId(null);
-      setFeedback({ type: 'success', text: 'Выход на работу сохранён.' });
+      setFeedback({ type: 'success', text: 'Рабочее время сохранено.' });
     } catch (error) {
-      if (axios.isAxiosError(error)) {
-        const apiMessage = typeof error.response?.data?.error === 'string' ? error.response.data.error : '';
-        setFeedback({ type: 'error', text: apiMessage || 'Не удалось сохранить рабочее время.' });
-      } else {
-        setFeedback({ type: 'error', text: 'Не удалось сохранить рабочее время.' });
-      }
+      setFeedback({ type: 'error', text: describeAxiosError(error) || 'Не удалось сохранить рабочее время.' });
     } finally {
       setIsSubmitting(false);
     }
@@ -180,14 +179,18 @@ export default function WorkerAttendancePage() {
   };
 
   const removeLog = async (logId: string) => {
-    const token = await ensureDemoAccessToken();
-    await axios.delete(`${API_BASE}/api/v1/work-logs/${logId}`, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-    if (editingLogId === logId) {
-      setEditingLogId(null);
+    try {
+      const token = ensureAccessToken();
+      await axios.delete(`${API_BASE}/api/v1/work-logs/${logId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (editingLogId === logId) {
+        setEditingLogId(null);
+      }
+      await loadWorkLogs(selectedWorkerId, selectedMonth);
+    } catch (error) {
+      setFeedback({ type: 'error', text: describeAxiosError(error) });
     }
-    await loadWorkLogs(selectedWorkerId, selectedMonth);
   };
 
   return (
@@ -196,14 +199,16 @@ export default function WorkerAttendancePage() {
         <div className="mb-6 flex items-center justify-between">
           <div>
             <p className="text-sm uppercase tracking-[0.3em] text-cyan-400">Attendance</p>
-            <h1 className="text-3xl font-semibold">Рабочие смены сотрудника</h1>
+            <h1 className="text-3xl font-semibold">Учёт рабочего времени</h1>
             <p className="mt-3 max-w-3xl text-sm text-slate-400">
-              Отдельная страница для отметки выхода на работу: день в календаре, время начала и окончания смены, а также суммарно потраченное время.
+              {isWorkerOnly
+                ? 'Страница работника: здесь доступен только собственный учёт времени.'
+                : 'Страница админа: можно просматривать и редактировать учёт времени сотрудников.'}
             </p>
           </div>
           <div className="flex gap-3">
-            <Link to="/workers" className="rounded border border-slate-700 px-3 py-2 text-sm">К работникам</Link>
-            <Link to="/" className="rounded border border-slate-700 px-3 py-2 text-sm">На главную</Link>
+            {user?.role === 'admin' ? <Link to="/" className="rounded border border-slate-700 px-3 py-2 text-sm">На главную</Link> : null}
+            <button onClick={logout} className="rounded border border-rose-800 px-3 py-2 text-sm text-rose-200">Выйти</button>
           </div>
         </div>
 
@@ -225,7 +230,7 @@ export default function WorkerAttendancePage() {
         <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
           <div className="space-y-6">
             <form onSubmit={submit} className="grid gap-3 rounded-2xl border border-slate-800 bg-slate-900/70 p-4 text-sm">
-              <h2 className="text-lg font-semibold">{editingLogId ? 'Редактировать смену' : 'Отметить выход на работу'}</h2>
+              <h2 className="text-lg font-semibold">{editingLogId ? 'Редактировать смену' : 'Отметить смену'}</h2>
 
               {feedback ? (
                 <div className={`rounded border px-3 py-2 text-sm ${feedback.type === 'success' ? 'border-emerald-700/40 bg-emerald-500/10 text-emerald-200' : 'border-rose-700/40 bg-rose-500/10 text-rose-200'}`}>
@@ -235,7 +240,12 @@ export default function WorkerAttendancePage() {
 
               <div className="grid gap-1">
                 <label className="text-slate-300">Сотрудник</label>
-                <select className="rounded border border-slate-700 bg-slate-950 px-3 py-2" value={selectedWorkerId} onChange={(event) => setSelectedWorkerId(event.target.value)}>
+                <select
+                  className="rounded border border-slate-700 bg-slate-950 px-3 py-2"
+                  value={selectedWorkerId}
+                  onChange={(event) => setSelectedWorkerId(event.target.value)}
+                  disabled={isWorkerOnly}
+                >
                   {workers.map((worker) => (
                     <option key={worker.id} value={worker.id}>{worker.fullName} ({worker.role})</option>
                   ))}
@@ -243,24 +253,24 @@ export default function WorkerAttendancePage() {
               </div>
 
               <div className="grid gap-1">
-                <label className="text-slate-300">День в календаре</label>
+                <label className="text-slate-300">День</label>
                 <input className="rounded border border-slate-700 bg-slate-950 px-3 py-2" type="date" value={form.workDate} onChange={(event) => setForm({ ...form, workDate: event.target.value })} required />
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="grid gap-1">
-                  <label className="text-slate-300">Начал работу</label>
+                  <label className="text-slate-300">Начало</label>
                   <input className="rounded border border-slate-700 bg-slate-950 px-3 py-2" type="time" value={form.startedAt} onChange={(event) => setForm({ ...form, startedAt: event.target.value })} required />
                 </div>
                 <div className="grid gap-1">
-                  <label className="text-slate-300">Закончил работу</label>
+                  <label className="text-slate-300">Конец</label>
                   <input className="rounded border border-slate-700 bg-slate-950 px-3 py-2" type="time" value={form.endedAt} onChange={(event) => setForm({ ...form, endedAt: event.target.value })} required />
                 </div>
               </div>
 
               <div className="flex gap-3">
                 <button className="rounded bg-cyan-500 px-3 py-2 font-medium text-slate-950 disabled:cursor-not-allowed disabled:opacity-70" type="submit" disabled={isSubmitting}>
-                  {isSubmitting ? 'Сохраняю...' : editingLogId ? 'Сохранить смену' : 'Отметить смену'}
+                  {isSubmitting ? 'Сохраняю...' : editingLogId ? 'Сохранить' : 'Добавить смену'}
                 </button>
                 {editingLogId ? (
                   <button
@@ -279,7 +289,7 @@ export default function WorkerAttendancePage() {
             </form>
 
             <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
-              <h2 className="text-lg font-semibold">Выходы на работу</h2>
+              <h2 className="text-lg font-semibold">Журнал смен</h2>
               <div className="mt-4 space-y-3">
                 {workLogs.map((log) => (
                   <div key={log.id} className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950/60 p-4 text-sm">
@@ -289,31 +299,21 @@ export default function WorkerAttendancePage() {
                       <p className="text-slate-500">Потрачено: {formatMinutes(log.totalMinutes)}</p>
                     </div>
                     <div className="flex gap-2">
-                      <button className="rounded border border-slate-700 px-3 py-1.5" onClick={() => startEditing(log)}>
-                        Изменить
-                      </button>
-                      <button className="rounded border border-rose-700 px-3 py-1.5 text-rose-200" onClick={() => removeLog(log.id)}>
-                        Удалить
-                      </button>
+                      <button className="rounded border border-slate-700 px-3 py-1.5" onClick={() => startEditing(log)}>Изменить</button>
+                      <button className="rounded border border-rose-700 px-3 py-1.5 text-rose-200" onClick={() => removeLog(log.id)}>Удалить</button>
                     </div>
                   </div>
                 ))}
-                {workLogs.length === 0 ? <p className="text-sm text-slate-400">За выбранный месяц выходов на работу пока нет.</p> : null}
+                {workLogs.length === 0 ? <p className="text-sm text-slate-400">За выбранный месяц смен пока нет.</p> : null}
               </div>
             </div>
           </div>
 
           <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
-            <h2 className="text-lg font-semibold">Календарь выходов</h2>
-            <p className="mt-2 text-sm text-slate-400">Нажмите на день, чтобы быстро подставить его в форму слева. Дни, в которые уже была смена, подсвечены и показывают потраченное время.</p>
+            <h2 className="text-lg font-semibold">Календарь</h2>
+            <p className="mt-2 text-sm text-slate-400">Нажми на день, чтобы быстро подставить его в форму. Дни со сменами подсвечены.</p>
             <div className="mt-4 grid grid-cols-7 gap-2 text-center text-xs uppercase tracking-[0.2em] text-slate-500">
-              <div>Пн</div>
-              <div>Вт</div>
-              <div>Ср</div>
-              <div>Чт</div>
-              <div>Пт</div>
-              <div>Сб</div>
-              <div>Вс</div>
+              <div>Пн</div><div>Вт</div><div>Ср</div><div>Чт</div><div>Пт</div><div>Сб</div><div>Вс</div>
             </div>
             <div className="mt-2 grid grid-cols-7 gap-2">
               {calendarDays.map((day, index) => {
@@ -333,11 +333,7 @@ export default function WorkerAttendancePage() {
                     className={`min-h-24 rounded-xl border p-3 text-left ${isSelected ? 'border-cyan-400 bg-cyan-500/10' : 'border-slate-800 bg-slate-950/50'} ${dayMinutes > 0 ? 'shadow-[inset_0_0_0_1px_rgba(16,185,129,0.45)]' : ''}`}
                   >
                     <div className="text-sm font-medium text-slate-100">{day.getDate()}</div>
-                    {dayMinutes > 0 ? (
-                      <div className="mt-3 text-xs text-emerald-300">{formatMinutes(dayMinutes)}</div>
-                    ) : (
-                      <div className="mt-3 text-xs text-slate-500">Нет смены</div>
-                    )}
+                    {dayMinutes > 0 ? <div className="mt-3 text-xs text-emerald-300">{formatMinutes(dayMinutes)}</div> : <div className="mt-3 text-xs text-slate-500">Нет смены</div>}
                   </button>
                 );
               })}

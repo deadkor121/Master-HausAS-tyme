@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { ensureDemoAccessToken } from '../lib/auth';
+import { ensureAccessToken } from '../lib/auth';
 
 type Order = {
   id: string;
@@ -58,7 +58,7 @@ export default function TimeEntryForm({ workerId, orders, editingEntry, month, o
       return;
     }
 
-    const token = await ensureDemoAccessToken();
+    const token = await ensureAccessToken();
     const payload = {
       orderId: form.orderId,
       month: form.month,

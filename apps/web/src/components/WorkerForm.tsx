@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { ensureDemoAccessToken } from '../lib/auth';
+import { ensureAccessToken } from '../lib/auth';
 import { oreToNokInputValue, parseNokInputToOre } from '../lib/currency';
 
 type Worker = {
@@ -55,7 +55,7 @@ export default function WorkerForm({ editingWorker, onSaved, onCancel }: Props) 
     setSubmitError(null);
 
     try {
-      const token = await ensureDemoAccessToken();
+      const token = await ensureAccessToken();
       const payload = {
         fullName: form.fullName,
         role: form.role,

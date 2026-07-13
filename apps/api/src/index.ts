@@ -16,6 +16,9 @@ declare global {
       user?: {
         id: string;
         role: string;
+        email?: string;
+        fullName?: string;
+        workerId?: string;
       };
     }
   }
@@ -191,6 +194,13 @@ const workLogCreateSchema = z.object({
   endedAt: z.string().regex(/^\d{2}:\d{2}$/)
 });
 
+const registerSchema = z.object({
+  email: z.string().trim().email(),
+  password: z.string().min(6),
+  fullName: z.string().trim().min(3),
+  role: z.enum(['admin', 'worker']).default('worker')
+});
+
 function buildWorkLogData(payload: { workDate: string; startedAt: string; endedAt: string }) {
   const startedAt = new Date(`${payload.workDate}T${payload.startedAt}:00`);
   const endedAt = new Date(`${payload.workDate}T${payload.endedAt}:00`);
@@ -208,13 +218,41 @@ function buildWorkLogData(payload: { workDate: string; startedAt: string; endedA
   };
 }
 
-function requireManagerRole(req: express.Request, res: express.Response) {
-  if (!req.user || !['admin', 'manager'].includes(req.user.role)) {
+function requireAdminRole(req: express.Request, res: express.Response) {
+  if (!req.user || req.user.role !== 'admin') {
     res.status(403).json({ error: 'Forbidden' });
     return false;
   }
 
   return true;
+}
+
+function requireOwnWorkerOrAdmin(req: express.Request, res: express.Response, workerId: string) {
+  if (!req.user) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return false;
+  }
+
+  if (req.user.role === 'admin') {
+    return true;
+  }
+
+  if (req.user.role === 'worker' && req.user.workerId === workerId) {
+    return true;
+  }
+
+  res.status(403).json({ error: 'Forbidden' });
+  return false;
+}
+
+async function resolveWorkerIdForUser(fullName: string, role: string) {
+  if (role !== 'worker') {
+    return undefined;
+  }
+
+  const worker = await prisma.worker.findMany();
+  const matched = worker.find((entry: { fullName: string }) => entry.fullName.trim().toLowerCase() === fullName.trim().toLowerCase());
+  return matched?.id;
 }
 
 function signToken(payload: object) {
@@ -230,8 +268,14 @@ function authMiddleware(req: express.Request, res: express.Response, next: expre
 
   const token = header.slice(7);
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as { sub: string; role: string };
-    req.user = { id: decoded.sub, role: decoded.role };
+    const decoded = jwt.verify(token, JWT_SECRET) as { sub: string; role: string; email?: string; fullName?: string; workerId?: string };
+    req.user = {
+      id: decoded.sub,
+      role: decoded.role,
+      email: decoded.email,
+      fullName: decoded.fullName,
+      workerId: decoded.workerId
+    };
     next();
   } catch {
     res.status(401).json({ error: 'Invalid token' });
@@ -269,6 +313,51 @@ export function createApp() {
     res.json({ status: 'ok', service: 'masterhaus-api' });
   });
 
+  app.post('/api/v1/auth/register', async (req, res) => {
+    const parsed = registerSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.flatten() });
+      return;
+    }
+
+    const existing = await prisma.user.findFirst({ where: { email: parsed.data.email } });
+    if (existing) {
+      res.status(409).json({ error: 'User with this email already exists' });
+      return;
+    }
+
+    const { hash } = await import('bcryptjs');
+    const user = await prisma.user.create({
+      data: {
+        email: parsed.data.email,
+        passwordHash: await hash(parsed.data.password, 10),
+        fullName: parsed.data.fullName,
+        role: parsed.data.role
+      }
+    });
+
+    let workerId: string | undefined;
+    if (user.role === 'worker') {
+      const existingWorkers = await prisma.worker.findMany();
+      const matchedWorker = existingWorkers.find((entry: { fullName: string }) => entry.fullName.trim().toLowerCase() === user.fullName.trim().toLowerCase());
+      const worker = matchedWorker ?? await prisma.worker.create({
+        data: {
+          fullName: user.fullName,
+          role: 'worker',
+          hourlyRateOre: 0,
+          skillTags: [],
+          isActive: true
+        }
+      });
+      workerId = worker.id;
+    }
+
+    const accessToken = signToken({ sub: user.id, role: user.role, email: user.email, fullName: user.fullName, workerId });
+    const refreshToken = signToken({ sub: user.id, type: 'refresh' });
+
+    res.status(201).json({ accessToken, refreshToken, user: { id: user.id, email: user.email, role: user.role, fullName: user.fullName, workerId } });
+  });
+
   app.post('/api/v1/auth/login', async (req, res) => {
     const { email, password } = req.body as { email?: string; password?: string };
     if (!email || !password) {
@@ -291,24 +380,42 @@ export function createApp() {
       return;
     }
 
-    const accessToken = signToken({ sub: user.id, role: user.role });
+    const workerId = await resolveWorkerIdForUser(user.fullName, user.role);
+    const accessToken = signToken({ sub: user.id, role: user.role, email: user.email, fullName: user.fullName, workerId });
     const refreshToken = signToken({ sub: user.id, type: 'refresh' });
 
-    res.json({ accessToken, refreshToken, user: { id: user.id, email: user.email, role: user.role, fullName: user.fullName } });
+    res.json({ accessToken, refreshToken, user: { id: user.id, email: user.email, role: user.role, fullName: user.fullName, workerId } });
   });
 
-  app.get('/api/v1/orders', authMiddleware, async (_req, res) => {
+  app.get('/api/v1/auth/me', authMiddleware, async (req, res) => {
+    res.json({ user: req.user });
+  });
+
+  app.get('/api/v1/orders', authMiddleware, async (req, res) => {
+    if (!requireAdminRole(req, res)) {
+      return;
+    }
+
     const orders = await prisma.order.findMany({ orderBy: { createdAt: 'desc' } });
     res.json({ items: orders });
   });
 
-  app.get('/api/v1/workers', authMiddleware, async (_req, res) => {
+  app.get('/api/v1/workers', authMiddleware, async (req, res) => {
+    if (!requireAdminRole(req, res)) {
+      return;
+    }
+
     const workers = await prisma.worker.findMany({ orderBy: { createdAt: 'desc' } });
     res.json({ items: workers });
   });
 
+  app.get('/api/v1/workers/directory', authMiddleware, async (_req, res) => {
+    const workers = await prisma.worker.findMany({ orderBy: { createdAt: 'desc' } });
+    res.json({ items: workers.map((worker: { id: string; fullName: string; role: string }) => ({ id: worker.id, fullName: worker.fullName, role: worker.role })) });
+  });
+
   app.post('/api/v1/workers', authMiddleware, async (req, res) => {
-    if (!requireManagerRole(req, res)) {
+    if (!requireAdminRole(req, res)) {
       return;
     }
 
@@ -333,6 +440,10 @@ export function createApp() {
   });
 
   app.get('/api/v1/workers/:id', authMiddleware, async (req, res) => {
+    if (!requireAdminRole(req, res)) {
+      return;
+    }
+
     const worker = await prisma.worker.findUnique({ where: { id: req.params.id } });
     if (!worker) {
       res.status(404).json({ error: 'Worker not found' });
@@ -343,7 +454,7 @@ export function createApp() {
   });
 
   app.put('/api/v1/workers/:id', authMiddleware, async (req, res) => {
-    if (!requireManagerRole(req, res)) {
+    if (!requireAdminRole(req, res)) {
       return;
     }
 
@@ -375,7 +486,7 @@ export function createApp() {
   });
 
   app.delete('/api/v1/workers/:id', authMiddleware, async (req, res) => {
-    if (!requireManagerRole(req, res)) {
+    if (!requireAdminRole(req, res)) {
       return;
     }
 
@@ -390,6 +501,10 @@ export function createApp() {
   });
 
   app.get('/api/v1/workers/:id/salary', authMiddleware, async (req, res) => {
+    if (!requireAdminRole(req, res)) {
+      return;
+    }
+
     const month = typeof req.query.month === 'string' ? req.query.month : '2026-07';
     const worker = await prisma.worker.findUnique({ where: { id: req.params.id } });
     if (!worker) {
@@ -416,7 +531,12 @@ export function createApp() {
   });
 
   app.get('/api/v1/workers/:id/work-logs', authMiddleware, async (req, res) => {
-    const worker = await prisma.worker.findUnique({ where: { id: req.params.id } });
+    const workerId = String(req.params.id);
+    if (!requireOwnWorkerOrAdmin(req, res, workerId)) {
+      return;
+    }
+
+    const worker = await prisma.worker.findUnique({ where: { id: workerId } });
     if (!worker) {
       res.status(404).json({ error: 'Worker not found' });
       return;
@@ -432,7 +552,12 @@ export function createApp() {
   });
 
   app.post('/api/v1/workers/:id/work-logs', authMiddleware, async (req, res) => {
-    const worker = await prisma.worker.findUnique({ where: { id: req.params.id } });
+    const workerId = String(req.params.id);
+    if (!requireOwnWorkerOrAdmin(req, res, workerId)) {
+      return;
+    }
+
+    const worker = await prisma.worker.findUnique({ where: { id: workerId } });
     if (!worker) {
       res.status(404).json({ error: 'Worker not found' });
       return;
@@ -467,6 +592,10 @@ export function createApp() {
       return;
     }
 
+    if (!requireOwnWorkerOrAdmin(req, res, existing.workerId)) {
+      return;
+    }
+
     const parsed = workLogCreateSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.flatten() });
@@ -494,11 +623,19 @@ export function createApp() {
       return;
     }
 
+    if (!requireOwnWorkerOrAdmin(req, res, existing.workerId)) {
+      return;
+    }
+
     await prisma.workLog.delete({ where: { id: req.params.id } });
     res.status(204).send();
   });
 
   app.get('/api/v1/workers/:id/time-entries', authMiddleware, async (req, res) => {
+    if (!requireAdminRole(req, res)) {
+      return;
+    }
+
     const worker = await prisma.worker.findUnique({ where: { id: req.params.id } });
     if (!worker) {
       res.status(404).json({ error: 'Worker not found' });
@@ -517,7 +654,7 @@ export function createApp() {
   });
 
   app.post('/api/v1/workers/:id/time-entries', authMiddleware, async (req, res) => {
-    if (!requireManagerRole(req, res)) {
+    if (!requireAdminRole(req, res)) {
       return;
     }
 
@@ -553,7 +690,7 @@ export function createApp() {
   });
 
   app.put('/api/v1/time-entries/:id', authMiddleware, async (req, res) => {
-    if (!requireManagerRole(req, res)) {
+    if (!requireAdminRole(req, res)) {
       return;
     }
 
@@ -591,7 +728,7 @@ export function createApp() {
   });
 
   app.delete('/api/v1/time-entries/:id', authMiddleware, async (req, res) => {
-    if (!requireManagerRole(req, res)) {
+    if (!requireAdminRole(req, res)) {
       return;
     }
 
@@ -605,7 +742,11 @@ export function createApp() {
     res.status(204).send();
   });
 
-  app.get('/api/v1/dashboard/live-overview', authMiddleware, async (_req, res) => {
+  app.get('/api/v1/dashboard/live-overview', authMiddleware, async (req, res) => {
+    if (!requireAdminRole(req, res)) {
+      return;
+    }
+
     const activeOrders = await prisma.order.findMany({
       where: { status: { in: ['in_progress', 'planned'] } },
       orderBy: { createdAt: 'desc' }
@@ -628,6 +769,10 @@ export function createApp() {
   });
 
   app.get('/api/v1/finance/monthly-report', authMiddleware, async (req, res) => {
+    if (!requireAdminRole(req, res)) {
+      return;
+    }
+
     const month = req.query.month as string | undefined;
     const reportMonth = month ?? '2026-07';
     const monthPayments = await prisma.payment.findMany({ where: { month: reportMonth } });
@@ -655,13 +800,17 @@ export function createApp() {
   });
 
   app.get('/api/v1/payments', authMiddleware, async (req, res) => {
+    if (!requireAdminRole(req, res)) {
+      return;
+    }
+
     const month = req.query.month as string | undefined;
     const items = await prisma.payment.findMany({ where: month ? { month } : undefined });
     res.json({ items });
   });
 
   app.post('/api/v1/payments', authMiddleware, async (req, res) => {
-    if (!requireManagerRole(req, res)) {
+    if (!requireAdminRole(req, res)) {
       return;
     }
 
@@ -682,7 +831,7 @@ export function createApp() {
   });
 
   app.put('/api/v1/payments/:id', authMiddleware, async (req, res) => {
-    if (!requireManagerRole(req, res)) {
+    if (!requireAdminRole(req, res)) {
       return;
     }
 
@@ -719,7 +868,7 @@ export function createApp() {
   });
 
   app.delete('/api/v1/payments/:id', authMiddleware, async (req, res) => {
-    if (!requireManagerRole(req, res)) {
+    if (!requireAdminRole(req, res)) {
       return;
     }
 
@@ -734,13 +883,17 @@ export function createApp() {
   });
 
   app.get('/api/v1/expenses', authMiddleware, async (req, res) => {
+    if (!requireAdminRole(req, res)) {
+      return;
+    }
+
     const month = req.query.month as string | undefined;
     const items = await prisma.expense.findMany({ where: month ? { month } : undefined });
     res.json({ items });
   });
 
   app.post('/api/v1/expenses', authMiddleware, async (req, res) => {
-    if (!requireManagerRole(req, res)) {
+    if (!requireAdminRole(req, res)) {
       return;
     }
 
@@ -755,7 +908,7 @@ export function createApp() {
   });
 
   app.put('/api/v1/expenses/:id', authMiddleware, async (req, res) => {
-    if (!requireManagerRole(req, res)) {
+    if (!requireAdminRole(req, res)) {
       return;
     }
 
@@ -784,7 +937,7 @@ export function createApp() {
   });
 
   app.delete('/api/v1/expenses/:id', authMiddleware, async (req, res) => {
-    if (!requireManagerRole(req, res)) {
+    if (!requireAdminRole(req, res)) {
       return;
     }
 
@@ -799,7 +952,7 @@ export function createApp() {
   });
 
   app.post('/api/v1/orders', authMiddleware, async (req, res) => {
-    if (!requireManagerRole(req, res)) {
+    if (!requireAdminRole(req, res)) {
       return;
     }
 
@@ -842,7 +995,7 @@ export function createApp() {
   });
 
   app.put('/api/v1/orders/:id', authMiddleware, async (req, res) => {
-    if (!requireManagerRole(req, res)) {
+    if (!requireAdminRole(req, res)) {
       return;
     }
 

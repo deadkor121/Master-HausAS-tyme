@@ -1,7 +1,20 @@
 import { hashSync } from 'bcryptjs';
 
 const DEMO_PASSWORD_HASH = hashSync('Masterhaus123!', 10);
-const allowFallbackDb = process.env.ALLOW_FALLBACK_DB === 'true';
+const databaseUrl = (process.env.DATABASE_URL ?? '').trim();
+const isLikelyPlaceholderDbUrl = (
+  databaseUrl.length === 0
+  || databaseUrl.includes('db.example.com')
+  || databaseUrl.includes('user:pass@')
+  || databaseUrl.includes('localhost')
+  || databaseUrl.includes('127.0.0.1')
+);
+const allowFallbackDb = process.env.ALLOW_FALLBACK_DB === 'true'
+  || (process.env.VERCEL === '1' && isLikelyPlaceholderDbUrl);
+
+if (process.env.VERCEL === '1' && isLikelyPlaceholderDbUrl) {
+  console.warn('DATABASE_URL looks local/placeholder on Vercel. Using fallback in-memory database.');
+}
 
 type PrismaLikeClient = {
   user: {

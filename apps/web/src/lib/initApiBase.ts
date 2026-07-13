@@ -1,6 +1,9 @@
 import { API_BASE } from './apiBase';
 
-// Initialize global API_BASE from a normalized Vite environment value.
-(globalThis as any).API_BASE = API_BASE;
-
-export {};
+/**
+ * Pure initialization: returns the normalized API base string.
+ * No global mutation, no side effects on import.
+ */
+export function initApiBase(): string {
+  return API_BASE;
+}

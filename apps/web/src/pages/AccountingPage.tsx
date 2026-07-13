@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
-import { ensureDemoAccessToken } from '../lib/auth';
+import { ensureAccessToken } from '../lib/auth';
 import FinanceEntryForm from '../components/FinanceEntryForm';
 import { formatNokFromOre } from '../lib/currency';
 
@@ -45,7 +45,7 @@ export default function AccountingPage() {
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
 
   const loadReport = async () => {
-    const token = await ensureDemoAccessToken();
+    const token = await ensureAccessToken();
     const [reportResponse, paymentsResponse, expensesResponse, ordersResponse] = await Promise.all([
       axios.get(`${API_BASE}/api/v1/finance/monthly-report?month=2026-07`, {
         headers: { Authorization: `Bearer ${token}` }
@@ -71,7 +71,7 @@ export default function AccountingPage() {
   }, []);
 
   const deleteEntry = async (kind: 'payments' | 'expenses', id: string) => {
-    const token = await ensureDemoAccessToken();
+    const token = await ensureAccessToken();
     await axios.delete(`${API_BASE}/api/v1/${kind}/${id}`, {
       headers: { Authorization: `Bearer ${token}` }
     });
