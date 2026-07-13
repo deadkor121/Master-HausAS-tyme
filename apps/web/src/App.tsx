@@ -10,6 +10,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import { useAuth } from './lib/AuthContext';
 import HomePage from './pages/HomePage';
 import WorkerCabinetPage from './pages/WorkerCabinetPage';
+import WorkerRegisterPage from './pages/WorkerRegisterPage';
 
 function RootRedirect() {
   const { user } = useAuth();
@@ -26,6 +27,7 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+      <Route path="/register/worker" element={<WorkerRegisterPage />} />
       <Route path="/" element={<ProtectedRoute><RootRedirect /></ProtectedRoute>} />
       <Route path="/home" element={<ProtectedRoute roles={['admin']}><HomePage /></ProtectedRoute>} />
       <Route path="/worker" element={<ProtectedRoute roles={['worker']}><WorkerCabinetPage /></ProtectedRoute>} />

@@ -43,7 +43,7 @@ export default function WorkerCabinetPage() {
           <div className="mt-8 grid gap-4 md:grid-cols-2">
             <Link to="/worker-attendance" className="rounded-[1.5rem] border border-emerald-400/30 bg-emerald-400/10 p-5 transition hover:-translate-y-1 hover:bg-emerald-400/15">
               <h3 className="text-xl font-semibold">Мои смены</h3>
-              <p className="mt-3 text-sm text-slate-300">Открыть календарь, добавить смену, поправить время начала и окончания.</p>
+              <p className="mt-3 text-sm text-slate-300">Открыть личную страницу, поставить дату и время работы, посмотреть календарь и заработок.</p>
             </Link>
             <div className="rounded-[1.5rem] border border-white/10 bg-white/5 p-5">
               <h3 className="text-xl font-semibold">Мои настройки</h3>

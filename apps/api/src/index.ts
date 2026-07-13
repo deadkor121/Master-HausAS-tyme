@@ -552,7 +552,38 @@ export function createApp() {
       ? items.filter((item: { workDate: Date }) => toLocalDateKey(item.workDate).slice(0, 7) === month)
       : items;
 
-    res.json({ items: filteredItems });
+    const itemsWithEarnings = filteredItems.map((item: { totalMinutes: number; workDate: Date }) => {
+      const earnedOre = Math.round((worker.hourlyRateOre * item.totalMinutes) / 60);
+      return {
+        ...item,
+        earnedOre,
+        workDateKey: toLocalDateKey(item.workDate)
+      };
+    });
+
+    const totalMinutes = itemsWithEarnings.reduce((sum: number, item: { totalMinutes: number }) => sum + item.totalMinutes, 0);
+    const totalEarnedOre = itemsWithEarnings.reduce((sum: number, item: { earnedOre: number }) => sum + item.earnedOre, 0);
+    const earningsByDate = itemsWithEarnings.reduce((acc: Record<string, { minutes: number; earnedOre: number }>, item: { workDateKey: string; totalMinutes: number; earnedOre: number }) => {
+      const existing = acc[item.workDateKey] ?? { minutes: 0, earnedOre: 0 };
+      acc[item.workDateKey] = {
+        minutes: existing.minutes + item.totalMinutes,
+        earnedOre: existing.earnedOre + item.earnedOre
+      };
+      return acc;
+    }, {});
+
+    res.json({
+      items: itemsWithEarnings,
+      summary: {
+        workerId: worker.id,
+        workerName: worker.fullName,
+        month,
+        hourlyRateOre: worker.hourlyRateOre,
+        totalMinutes,
+        totalEarnedOre,
+        earningsByDate
+      }
+    });
   });
 
   app.post('/api/v1/workers/:id/work-logs', authMiddleware, async (req, res) => {
