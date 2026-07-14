@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
+import { API_BASE } from '../lib/apiBase';
 import { ensureAccessToken } from '../lib/auth';
 import FinanceEntryForm from '../components/FinanceEntryForm';
 import { formatNokFromOre } from '../lib/currency';
@@ -140,3 +141,4 @@ export default function AccountingPage() {
     </AdminShell>
   );
 }
+

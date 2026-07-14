@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
+import { API_BASE } from '../lib/apiBase';
 import OrderForm from '../components/OrderForm';
 import { ensureAccessToken } from '../lib/auth';
 import AdminShell from '../components/AdminShell';
@@ -57,3 +58,4 @@ export default function OrdersPage() {
     </AdminShell>
   );
 }
+

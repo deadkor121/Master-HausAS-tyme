@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
+import { API_BASE } from '../lib/apiBase';
 import { ensureAccessToken } from '../lib/auth';
 import AdminShell from '../components/AdminShell';
 
@@ -80,3 +81,4 @@ export default function AdminDashboardPage() {
     </AdminShell>
   );
 }
+

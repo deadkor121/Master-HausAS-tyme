@@ -1,37 +1,53 @@
 import { Resend } from 'resend';
+import { prisma } from './db.js';
 
-function getWorkerNotificationEmails() {
-  return (process.env.WORKER_NOTIFICATION_EMAILS ?? '')
-    .split(',')
-    .map((email) => email.trim())
-    .filter(Boolean);
+async function getWorkerNotificationRecipients() {
+  const users = await prisma.user.findMany({
+    where: {
+      role: 'worker',
+      emailNotificationsEnabled: true
+    }
+  });
+
+  return users
+    .map((user) => user.email?.trim())
+    .filter((email): email is string => Boolean(email));
 }
 
-function getNotificationsEnabled() {
-  return Boolean(
-    process.env.RESEND_API_KEY
-    && process.env.RESEND_FROM_EMAIL
-    && getWorkerNotificationEmails().length > 0
-  );
+async function getNotificationsEnabled() {
+  if (!process.env.RESEND_API_KEY || !process.env.RESEND_FROM_EMAIL) {
+    return false;
+  }
+
+  const recipients = await getWorkerNotificationRecipients();
+  return recipients.length > 0;
 }
 
 export async function sendWorkerNotification(input: {
   subject: string;
   text: string;
 }) {
-  if (!getNotificationsEnabled()) {
+  if (!process.env.RESEND_API_KEY || !process.env.RESEND_FROM_EMAIL) {
     return {
       ok: false as const,
       skipped: true as const,
-      reason: 'Worker notifications are not configured'
+      reason: 'Resend is not configured'
     };
   }
 
-  const resend = new Resend(process.env.RESEND_API_KEY!);
-  const to = getWorkerNotificationEmails();
+  const to = await getWorkerNotificationRecipients();
 
+  if (to.length === 0) {
+    return {
+      ok: false as const,
+      skipped: true as const,
+      reason: 'No registered workers with enabled email notifications'
+    };
+  }
+
+  const resend = new Resend(process.env.RESEND_API_KEY);
   const result = await resend.emails.send({
-    from: process.env.RESEND_FROM_EMAIL!,
+    from: process.env.RESEND_FROM_EMAIL,
     to,
     subject: input.subject,
     text: input.text
@@ -40,16 +56,18 @@ export async function sendWorkerNotification(input: {
   return {
     ok: true as const,
     skipped: false as const,
+    recipients: to,
     result
   };
 }
 
-export function getWorkerNotificationConfig() {
-  const to = getWorkerNotificationEmails();
+export async function getWorkerNotificationConfig() {
+  const recipients = await getWorkerNotificationRecipients();
 
   return {
-    enabled: getNotificationsEnabled(),
+    enabled: await getNotificationsEnabled(),
     fromEmail: process.env.RESEND_FROM_EMAIL ?? null,
-    recipientsCount: to.length
+    recipientsCount: recipients.length,
+    recipients
   };
 }

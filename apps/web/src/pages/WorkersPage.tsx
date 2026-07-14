@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
+import { API_BASE } from '../lib/apiBase';
 import { ensureAccessToken } from '../lib/auth';
 import WorkerForm from '../components/WorkerForm';
 import TimeEntryForm from '../components/TimeEntryForm';
@@ -208,3 +209,4 @@ export default function WorkersPage() {
     </AdminShell>
   );
 }
+

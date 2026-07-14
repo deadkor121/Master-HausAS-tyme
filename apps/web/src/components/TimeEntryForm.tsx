@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
+import { API_BASE } from '../lib/apiBase';
 import { ensureAccessToken } from '../lib/auth';
 
 type Order = {
@@ -119,3 +120,4 @@ export default function TimeEntryForm({ workerId, orders, editingEntry, month, o
     </form>
   );
 }
+

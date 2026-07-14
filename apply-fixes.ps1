@@ -1,7 +1,23 @@
+# Apply MasterHausAS-TIME fixes
+# Run from project root: powershell -ExecutionPolicy Bypass -File .\apply-fixes.ps1
+
+$ErrorActionPreference = 'Stop'
+$root = Get-Location
+
+function Set-File {
+    param([string]$Path, [string]$Content)
+    $full = Join-Path $root $Path
+    $dir = Split-Path $full
+    if (!(Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    [System.IO.File]::WriteAllText($full, $Content, [System.Text.UTF8Encoding]::new($false))
+    Write-Host "[OK] $Path"
+}
+
+# 1) OrderForm — show 401/save errors to the user
+$orderForm = @'
 import { useState } from 'react';
 import axios from 'axios';
-import { API_BASE } from '../lib/apiBase';
-import { ensureAccessToken, describeAxiosError, handleAuthError } from '../lib/auth';
+import { ensureDemoAccessToken, describeAxiosError, handleAuthError } from '../lib/auth';
 import { parseNokInputToOre } from '../lib/currency';
 
 type Props = {
@@ -27,7 +43,7 @@ export default function OrderForm({ onCreated }: Props) {
     setErrorMessage('');
 
     try {
-      const token = await ensureAccessToken();
+      const token = await ensureDemoAccessToken();
       await axios.post(`${API_BASE}/api/v1/orders`, {
         ...form,
         budgetTotalOre: parseNokInputToOre(form.budgetTotalNok)
@@ -39,12 +55,8 @@ export default function OrderForm({ onCreated }: Props) {
       setForm({ orderNumber: '', title: '', status: 'planned', budgetTotalNok: '40000', deadlineDate: '' });
       setSuccessMessage('Заказ успешно создан и добавлен в список.');
     } catch (error) {
-      if (axios.isAxiosError(error)) {
-        const apiMessage = typeof error.response?.data?.error === 'string' ? error.response.data.error : '';
-        setErrorMessage(apiMessage || 'Не удалось создать заказ. Проверьте поля и попробуйте снова.');
-      } else {
-        setErrorMessage('Не удалось создать заказ. Проверьте подключение к серверу и попробуйте снова.');
-      }
+      handleAuthError(error);
+      setErrorMessage(describeAxiosError(error) || 'Не удалось создать заказ. Проверьте подключение к серверу и попробуйте снова.');
     } finally {
       setIsSubmitting(false);
     }
@@ -96,4 +108,3 @@ export default function OrderForm({ onCreated }: Props) {
     </form>
   );
 }
-

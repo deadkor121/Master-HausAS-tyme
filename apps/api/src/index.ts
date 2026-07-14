@@ -372,7 +372,8 @@ export function createApp() {
         email: parsed.data.email,
         passwordHash: await hash(parsed.data.password, 10),
         fullName: parsed.data.fullName,
-        role: parsed.data.role
+        role: parsed.data.role,
+        emailNotificationsEnabled: parsed.data.role === 'worker'
       }
     });
 
@@ -395,7 +396,18 @@ export function createApp() {
     const accessToken = signToken({ sub: user.id, role: user.role, email: user.email, fullName: user.fullName, workerId });
     const refreshToken = signToken({ sub: user.id, type: 'refresh' });
 
-    res.status(201).json({ accessToken, refreshToken, user: { id: user.id, email: user.email, role: user.role, fullName: user.fullName, workerId } });
+    res.status(201).json({
+      accessToken,
+      refreshToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        fullName: user.fullName,
+        workerId,
+        emailNotificationsEnabled: user.emailNotificationsEnabled
+      }
+    });
   });
 
   app.post('/api/v1/auth/login', async (req, res) => {

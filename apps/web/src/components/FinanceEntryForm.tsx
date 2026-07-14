@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
+import { API_BASE } from '../lib/apiBase';
 import { ensureAccessToken } from '../lib/auth';
 import { oreToNokInputValue, parseNokInputToOre } from '../lib/currency';
 
@@ -124,3 +125,4 @@ export default function FinanceEntryForm({ kind, orders = [], editingEntry, onSa
     </form>
   );
 }
+
