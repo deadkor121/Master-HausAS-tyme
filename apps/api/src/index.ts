@@ -7,6 +7,7 @@ import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import { pathToFileURL } from 'node:url';
 import { prisma } from './db.js';
+import { getWorkerNotificationConfig, sendWorkerNotification } from './notifications.js';
 
 dotenv.config();
 
@@ -324,6 +325,32 @@ export function createApp() {
 
   app.get('/api/v1/health', (_req, res) => {
     res.json({ status: 'ok', service: 'masterhaus-api' });
+  });
+
+  app.get('/api/v1/notifications/workers/config', authMiddleware, async (req, res) => {
+    if (!requireAdminRole(req, res)) {
+      return;
+    }
+
+    res.json(getWorkerNotificationConfig());
+  });
+
+  app.post('/api/v1/notifications/workers/test', authMiddleware, async (req, res) => {
+    if (!requireAdminRole(req, res)) {
+      return;
+    }
+
+    const result = await sendWorkerNotification({
+      subject: 'Тестовое уведомление для работников MasterHaus',
+      text: [
+        'Это тестовое уведомление для работников.',
+        '',
+        'Если вы получили это письмо, значит email-уведомления работают.',
+        `Отправлено: ${new Date().toLocaleString('uk-UA', { timeZone: 'Europe/Kiev' })}`
+      ].join('\n')
+    });
+
+    res.json(result);
   });
 
   app.post('/api/v1/auth/register', async (req, res) => {
@@ -1067,7 +1094,23 @@ export function createApp() {
         }
       });
 
-      res.status(201).json(nextOrder);
+      const notificationResult = await sendWorkerNotification({
+        subject: `Новый заказ ${nextOrder.orderNumber}`,
+        text: [
+          'Создан новый заказ для работников MasterHaus.',
+          '',
+          `Номер заказа: ${nextOrder.orderNumber}`,
+          `Название: ${nextOrder.title}`,
+          `Статус: ${nextOrder.status}`,
+          `Дедлайн: ${parsed.data.deadlineDate}`,
+          `Бюджет: ${(nextOrder.budgetTotalOre / 100).toFixed(2)} NOK`
+        ].join('\n')
+      });
+
+      res.status(201).json({
+        ...nextOrder,
+        workerNotification: notificationResult
+      });
     } catch (error) {
       if (error instanceof Error && error.message.includes('Unique constraint failed')) {
         res.status(409).json({ error: 'Order number already exists' });
