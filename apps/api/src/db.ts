@@ -78,6 +78,30 @@ type PrismaLikeClient = {
     update: (args: any) => Promise<any>;
     delete: (args: any) => Promise<any>;
   };
+  workerAdvance: {
+    count: () => Promise<number>;
+    findMany: (args?: any) => Promise<any[]>;
+    findUnique: (args: any) => Promise<any>;
+    create: (args: any) => Promise<any>;
+    update: (args: any) => Promise<any>;
+    delete: (args: any) => Promise<any>;
+  };
+  workSite: {
+    findMany: (args?: any) => Promise<any[]>;
+    findFirst: (args?: any) => Promise<any>;
+    findUnique: (args: any) => Promise<any>;
+    create: (args: any) => Promise<any>;
+    update: (args: any) => Promise<any>;
+    updateMany: (args: any) => Promise<{ count: number }>;
+  };
+  workSitePing: {
+    findMany: (args?: any) => Promise<any[]>;
+    create: (args: any) => Promise<any>;
+  };
+  workPhotoReport: {
+    findMany: (args?: any) => Promise<any[]>;
+    create: (args: any) => Promise<any>;
+  };
 };
 
 function createFallbackPrisma(): PrismaLikeClient {
@@ -168,6 +192,10 @@ function createFallbackPrisma(): PrismaLikeClient {
       updatedAt: new Date()
     }
   ];
+  const workerAdvances: any[] = [];
+  const workSites: any[] = [];
+  const workSitePings: any[] = [];
+  const workPhotoReports: any[] = [];
 
   return {
     user: {
@@ -203,8 +231,22 @@ function createFallbackPrisma(): PrismaLikeClient {
         }
         return { count: data.length };
       },
-      findMany: async ({ orderBy }: any = {}) => {
-        const items = [...orders];
+      findMany: async ({ where, orderBy }: any = {}) => {
+        let items = [...orders];
+        if (where?.OR?.length) {
+          items = items.filter((order) => where.OR.some((condition: any) => {
+            if (condition.orderNumber?.contains) {
+              return order.orderNumber.toLowerCase().includes(String(condition.orderNumber.contains).toLowerCase());
+            }
+            if (condition.title?.contains) {
+              return order.title.toLowerCase().includes(String(condition.title.contains).toLowerCase());
+            }
+            if (condition.status?.contains) {
+              return order.status.toLowerCase().includes(String(condition.status.contains).toLowerCase());
+            }
+            return false;
+          }));
+        }
         if (orderBy?.createdAt === 'desc') {
           return items.sort((a, b) => Number(b.createdAt) - Number(a.createdAt));
         }
@@ -413,6 +455,148 @@ function createFallbackPrisma(): PrismaLikeClient {
         }
         const [deleted] = workLogs.splice(index, 1);
         return deleted;
+      }
+    },
+    workerAdvance: {
+      count: async () => workerAdvances.length,
+      findMany: async ({ where, orderBy }: any = {}) => {
+        let items = workerAdvances.filter((entry) => where?.workerId ? entry.workerId === where.workerId : true);
+        if (Array.isArray(orderBy) && orderBy.some((item) => item.advanceDate === 'desc')) {
+          items = [...items].sort((a, b) => Number(b.advanceDate) - Number(a.advanceDate) || Number(b.createdAt) - Number(a.createdAt));
+        }
+        return items;
+      },
+      findUnique: async ({ where }: any) => workerAdvances.find((entry) => entry.id === where.id) ?? null,
+      create: async ({ data }: any) => {
+        const item = { id: `worker-advance-${Date.now()}`, createdAt: new Date(), updatedAt: new Date(), ...data };
+        workerAdvances.push(item);
+        return item;
+      },
+      update: async ({ where, data }: any) => {
+        const index = workerAdvances.findIndex((entry) => entry.id === where.id);
+        if (index === -1) {
+          throw new Error('Worker advance not found');
+        }
+        const updated = { ...workerAdvances[index], ...data, updatedAt: new Date() };
+        workerAdvances[index] = updated;
+        return updated;
+      },
+      delete: async ({ where }: any) => {
+        const index = workerAdvances.findIndex((entry) => entry.id === where.id);
+        if (index === -1) {
+          throw new Error('Worker advance not found');
+        }
+        const [deleted] = workerAdvances.splice(index, 1);
+        return deleted;
+      }
+    },
+    workSite: {
+      findMany: async ({ where, orderBy }: any = {}) => {
+        let items = workSites.filter((entry) => {
+          const workerMatches = where?.workerId ? entry.workerId === where.workerId : true;
+          const activeMatches = typeof where?.isActive === 'boolean' ? entry.isActive === where.isActive : true;
+          return workerMatches && activeMatches;
+        });
+        if (orderBy?.createdAt === 'desc') {
+          items = [...items].sort((a, b) => Number(b.createdAt) - Number(a.createdAt));
+        }
+        if (Array.isArray(orderBy) && orderBy.some((item) => item.startedAt === 'desc')) {
+          items = [...items].sort((a, b) => Number(b.startedAt) - Number(a.startedAt));
+        }
+        return items;
+      },
+      findFirst: async ({ where, orderBy }: any = {}) => {
+        const items = await (async () => {
+          let filtered = workSites.filter((entry) => {
+            const workerMatches = where?.workerId ? entry.workerId === where.workerId : true;
+            const activeMatches = typeof where?.isActive === 'boolean' ? entry.isActive === where.isActive : true;
+            return workerMatches && activeMatches;
+          });
+          if (orderBy?.startedAt === 'desc') {
+            filtered = [...filtered].sort((a, b) => Number(b.startedAt) - Number(a.startedAt));
+          }
+          return filtered;
+        })();
+        return items[0] ?? null;
+      },
+      findUnique: async ({ where }: any) => workSites.find((entry) => entry.id === where.id) ?? null,
+      create: async ({ data }: any) => {
+        const item = {
+          id: `work-site-${Date.now()}`,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          startedAt: new Date(),
+          isActive: true,
+          ...data
+        };
+        workSites.push(item);
+        return item;
+      },
+      update: async ({ where, data }: any) => {
+        const index = workSites.findIndex((entry) => entry.id === where.id);
+        if (index === -1) {
+          throw new Error('Work site not found');
+        }
+        const updated = { ...workSites[index], ...data, updatedAt: new Date() };
+        workSites[index] = updated;
+        return updated;
+      },
+      updateMany: async ({ where, data }: any) => {
+        let count = 0;
+        for (let index = 0; index < workSites.length; index += 1) {
+          const entry = workSites[index];
+          const workerMatches = where?.workerId ? entry.workerId === where.workerId : true;
+          const activeMatches = typeof where?.isActive === 'boolean' ? entry.isActive === where.isActive : true;
+          if (workerMatches && activeMatches) {
+            workSites[index] = { ...entry, ...data, updatedAt: new Date() };
+            count += 1;
+          }
+        }
+        return { count };
+      }
+    },
+    workSitePing: {
+      findMany: async ({ where, orderBy, take }: any = {}) => {
+        let items = workSitePings.filter((entry) => {
+          const workerMatches = where?.workerId ? entry.workerId === where.workerId : true;
+          const siteMatches = where?.workSiteId ? entry.workSiteId === where.workSiteId : true;
+          return workerMatches && siteMatches;
+        });
+        if (orderBy?.createdAt === 'desc') {
+          items = [...items].sort((a, b) => Number(b.createdAt) - Number(a.createdAt));
+        }
+        if (typeof take === 'number') {
+          items = items.slice(0, take);
+        }
+        return items;
+      },
+      create: async ({ data }: any) => {
+        const item = { id: `work-site-ping-${Date.now()}`, createdAt: new Date(), ...data };
+        workSitePings.push(item);
+        return item;
+      }
+    },
+    workPhotoReport: {
+      findMany: async ({ where, orderBy, take }: any = {}) => {
+        let items = workPhotoReports.filter((entry) => {
+          const workerMatches = where?.workerId ? entry.workerId === where.workerId : true;
+          const siteMatches = where?.workSiteId ? entry.workSiteId === where.workSiteId : true;
+          return workerMatches && siteMatches;
+        });
+        if (Array.isArray(orderBy) && orderBy.some((item) => item.workDate === 'desc')) {
+          items = [...items].sort((a, b) => Number(b.workDate) - Number(a.workDate) || Number(b.createdAt) - Number(a.createdAt));
+        } else if (orderBy?.createdAt === 'desc') {
+          items = [...items].sort((a, b) => Number(b.createdAt) - Number(a.createdAt));
+        }
+        if (typeof take === 'number') {
+          items = items.slice(0, take);
+        }
+        return items;
+      },
+      create: async ({ data }: any) => {
+        const item = { id: `work-photo-report-${Date.now()}`, createdAt: new Date(), ...data };
+        workPhotoReports.push(item);
+        return item;
       }
     }
   };

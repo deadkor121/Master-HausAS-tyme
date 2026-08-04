@@ -1,0 +1,5 @@
+ALTER TABLE "Worker"
+ADD COLUMN "phone" TEXT,
+ADD COLUMN "email" TEXT,
+ADD COLUMN "photoUrl" TEXT,
+ADD COLUMN "bio" TEXT;

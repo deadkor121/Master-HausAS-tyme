@@ -6,6 +6,7 @@ import { compare, hash } from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import { pathToFileURL } from 'node:url';
+import { createHash } from 'node:crypto';
 import { prisma } from './db.js';
 import { getWorkerNotificationConfig, sendWorkerNotification } from './notifications.js';
 
@@ -167,7 +168,23 @@ const workerCreateSchema = z.object({
   hourlyRateOre: z.number().int().nonnegative(),
   skillTags: z.array(z.string().trim().min(1)).default([]),
   brigadeName: z.string().trim().min(1).optional(),
+  phone: z.string().trim().min(3).max(40).optional(),
+  email: z.string().trim().email().optional(),
+  photoUrl: z.string().trim().url().optional(),
+  bio: z.string().trim().max(500).optional(),
   isActive: z.boolean().optional()
+});
+
+const workerRegisterSchema = z.object({
+  email: z.string().trim().email(),
+  password: z.string().min(6),
+  fullName: z.string().trim().min(3),
+  role: z.enum(['admin', 'worker']).default('worker'),
+  phone: z.string().trim().min(3).max(40).optional(),
+  brigadeName: z.string().trim().min(1).optional(),
+  photoUrl: z.string().trim().url().optional(),
+  skillTags: z.array(z.string().trim().min(1)).optional(),
+  bio: z.string().trim().max(500).optional()
 });
 
 const paymentCreateSchema = z.object({
@@ -195,6 +212,50 @@ const workLogCreateSchema = z.object({
   endedAt: z.string().regex(/^\d{2}:\d{2}$/)
 });
 
+const workerAdvanceCreateSchema = z.object({
+  advanceDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  amountOre: z.number().int().positive(),
+  note: z.string().trim().max(200).optional()
+});
+
+const workSiteCreateSchema = z.object({
+  address: z.string().trim().min(5),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  radiusMeters: z.number().int().min(5).max(200).optional()
+});
+
+const workSitePingSchema = z.object({
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  accuracyMeters: z.number().nonnegative().max(1000).optional()
+});
+
+const workSiteGeolocationStateSchema = z.object({
+  enabled: z.boolean(),
+  reason: z.string().trim().max(500).optional()
+});
+
+const workPhotoReportCreateSchema = z.object({
+  workDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  photoUrl: z.string().trim().url().optional(),
+  photoUrls: z.array(z.string().trim().url()).min(1).optional(),
+  reportType: z.enum(['start', 'end']).optional(),
+  note: z.string().trim().max(500).optional()
+}).refine((data) => Boolean(data.photoUrl || data.photoUrls?.length), {
+  message: 'At least one photo is required',
+  path: ['photoUrls']
+});
+
+const workShiftReportSchema = z.object({
+  photoUrl: z.string().trim().url().optional(),
+  photoUrls: z.array(z.string().trim().url()).min(1).optional(),
+  note: z.string().trim().min(3).max(500)
+}).refine((data) => Boolean(data.photoUrl || data.photoUrls?.length), {
+  message: 'At least one photo is required',
+  path: ['photoUrls']
+});
+
 const registerSchema = z.object({
   email: z.string().trim().email(),
   password: z.string().min(6),
@@ -213,6 +274,39 @@ const changePasswordSchema = z.object({
 
 function toLocalDateKey(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function toMonthKey(date: Date) {
+  return toLocalDateKey(date).slice(0, 7);
+}
+
+function calculateDistanceMeters(from: { latitude: number; longitude: number }, to: { latitude: number; longitude: number }) {
+  const toRadians = (value: number) => (value * Math.PI) / 180;
+  const earthRadiusMeters = 6371000;
+  const latitudeDelta = toRadians(to.latitude - from.latitude);
+  const longitudeDelta = toRadians(to.longitude - from.longitude);
+  const latitude1 = toRadians(from.latitude);
+  const latitude2 = toRadians(to.latitude);
+
+  const a = Math.sin(latitudeDelta / 2) ** 2
+    + Math.cos(latitude1) * Math.cos(latitude2) * Math.sin(longitudeDelta / 2) ** 2;
+
+  return earthRadiusMeters * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function buildCloudinarySignature(params: Record<string, string>) {
+  const apiSecret = process.env.CLOUDINARY_API_SECRET;
+  if (!apiSecret) {
+    throw new Error('Cloudinary secret is not configured');
+  }
+
+  const serialized = Object.entries(params)
+    .filter(([, value]) => value !== undefined && value !== null && value !== '')
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, value]) => `${key}=${value}`)
+    .join('&');
+
+  return createHash('sha1').update(`${serialized}${apiSecret}`).digest('hex');
 }
 
 function buildWorkLogData(payload: { workDate: string; startedAt: string; endedAt: string }) {
@@ -332,7 +426,7 @@ export function createApp() {
       return;
     }
 
-    res.json(getWorkerNotificationConfig());
+    res.json(await getWorkerNotificationConfig());
   });
 
   app.post('/api/v1/notifications/workers/test', authMiddleware, async (req, res) => {
@@ -354,7 +448,7 @@ export function createApp() {
   });
 
   app.post('/api/v1/auth/register', async (req, res) => {
-    const parsed = registerSchema.safeParse(req.body);
+    const parsed = workerRegisterSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.flatten() });
       return;
@@ -381,15 +475,32 @@ export function createApp() {
     if (user.role === 'worker') {
       const existingWorkers = await prisma.worker.findMany();
       const matchedWorker = existingWorkers.find((entry: { fullName: string }) => entry.fullName.trim().toLowerCase() === user.fullName.trim().toLowerCase());
-      const worker = matchedWorker ?? await prisma.worker.create({
-        data: {
-          fullName: user.fullName,
-          role: 'worker',
-          hourlyRateOre: 0,
-          skillTags: [],
-          isActive: true
-        }
-      });
+      const workerData = {
+        fullName: user.fullName,
+        role: 'worker',
+        hourlyRateOre: 0,
+        skillTags: parsed.data.skillTags ?? [],
+        brigadeName: parsed.data.brigadeName,
+        phone: parsed.data.phone,
+        email: parsed.data.email,
+        photoUrl: parsed.data.photoUrl,
+        bio: parsed.data.bio,
+        isActive: true
+      };
+
+      const worker = matchedWorker
+        ? await prisma.worker.update({
+            where: { id: matchedWorker.id },
+            data: {
+              ...(parsed.data.skillTags ? { skillTags: parsed.data.skillTags } : {}),
+              ...(parsed.data.brigadeName !== undefined ? { brigadeName: parsed.data.brigadeName } : {}),
+              ...(parsed.data.phone !== undefined ? { phone: parsed.data.phone } : {}),
+              ...(parsed.data.email !== undefined ? { email: parsed.data.email } : {}),
+              ...(parsed.data.photoUrl !== undefined ? { photoUrl: parsed.data.photoUrl } : {}),
+              ...(parsed.data.bio !== undefined ? { bio: parsed.data.bio } : {})
+            }
+          })
+        : await prisma.worker.create({ data: workerData });
       workerId = worker.id;
     }
 
@@ -498,7 +609,17 @@ export function createApp() {
       return;
     }
 
-    const orders = await prisma.order.findMany({ orderBy: { createdAt: 'desc' } });
+    const query = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const orders = await prisma.order.findMany({
+      where: query ? {
+        OR: [
+          { orderNumber: { contains: query, mode: 'insensitive' } },
+          { title: { contains: query, mode: 'insensitive' } },
+          { status: { contains: query, mode: 'insensitive' } }
+        ]
+      } : undefined,
+      orderBy: { createdAt: 'desc' }
+    });
     res.json({ items: orders });
   });
 
@@ -514,6 +635,35 @@ export function createApp() {
   app.get('/api/v1/workers/directory', authMiddleware, async (_req, res) => {
     const workers = await prisma.worker.findMany({ orderBy: { createdAt: 'desc' } });
     res.json({ items: workers.map((worker: { id: string; fullName: string; role: string }) => ({ id: worker.id, fullName: worker.fullName, role: worker.role })) });
+  });
+
+  app.get('/api/v1/workers/geo-status', authMiddleware, async (req, res) => {
+    if (!requireAdminRole(req, res)) {
+      return;
+    }
+
+    const workers = await prisma.worker.findMany({ orderBy: { createdAt: 'desc' } });
+    const sites = await prisma.workSite.findMany({
+      where: { isActive: true },
+      orderBy: { startedAt: 'desc' }
+    });
+    const reports = await prisma.workPhotoReport.findMany({
+      orderBy: [{ workDate: 'desc' }, { createdAt: 'desc' }]
+    });
+
+    const items = workers.map((worker: any) => {
+      const site = sites.find((entry: any) => entry.workerId === worker.id) ?? null;
+      const latestReport = reports.find((entry: any) => entry.workerId === worker.id) ?? null;
+      return {
+        workerId: worker.id,
+        workerName: worker.fullName,
+        site,
+        latestReport,
+        hasLeftSite: Boolean(site?.leftAt)
+      };
+    });
+
+    res.json({ items });
   });
 
   app.post('/api/v1/workers', authMiddleware, async (req, res) => {
@@ -534,6 +684,10 @@ export function createApp() {
         hourlyRateOre: parsed.data.hourlyRateOre,
         skillTags: parsed.data.skillTags,
         brigadeName: parsed.data.brigadeName,
+        phone: parsed.data.phone,
+        email: parsed.data.email,
+        photoUrl: parsed.data.photoUrl,
+        bio: parsed.data.bio,
         isActive: parsed.data.isActive ?? true
       }
     });
@@ -580,6 +734,10 @@ export function createApp() {
         ...(parsed.data.hourlyRateOre !== undefined ? { hourlyRateOre: parsed.data.hourlyRateOre } : {}),
         ...(parsed.data.skillTags ? { skillTags: parsed.data.skillTags } : {}),
         ...(parsed.data.brigadeName !== undefined ? { brigadeName: parsed.data.brigadeName } : {}),
+        ...(parsed.data.phone !== undefined ? { phone: parsed.data.phone } : {}),
+        ...(parsed.data.email !== undefined ? { email: parsed.data.email } : {}),
+        ...(parsed.data.photoUrl !== undefined ? { photoUrl: parsed.data.photoUrl } : {}),
+        ...(parsed.data.bio !== undefined ? { bio: parsed.data.bio } : {}),
         ...(parsed.data.isActive !== undefined ? { isActive: parsed.data.isActive } : {})
       }
     });
@@ -602,6 +760,361 @@ export function createApp() {
     res.status(204).send();
   });
 
+  app.post('/api/v1/uploads/worker-photo/sign', authMiddleware, async (req, res) => {
+    if (!requireAdminRole(req, res)) {
+      return;
+    }
+
+    const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+    const apiKey = process.env.CLOUDINARY_API_KEY;
+    if (!cloudName || !apiKey || !process.env.CLOUDINARY_API_SECRET) {
+      res.status(400).json({ error: 'Cloudinary is not configured on the server' });
+      return;
+    }
+
+    const folder = 'masterhaus/workers';
+    const timestamp = String(Math.floor(Date.now() / 1000));
+    const signature = buildCloudinarySignature({ folder, timestamp });
+
+    res.json({ cloudName, apiKey, folder, timestamp, signature });
+  });
+
+  app.get('/api/v1/workers/:id/work-site', authMiddleware, async (req, res) => {
+    const workerId = String(req.params.id);
+    if (!requireOwnWorkerOrAdmin(req, res, workerId)) {
+      return;
+    }
+
+    const worker = await prisma.worker.findUnique({ where: { id: workerId } });
+    if (!worker) {
+      res.status(404).json({ error: 'Worker not found' });
+      return;
+    }
+
+    const site = await prisma.workSite.findFirst({
+      where: { workerId, isActive: true },
+      orderBy: { startedAt: 'desc' }
+    });
+
+    res.json({ site });
+  });
+
+  app.post('/api/v1/workers/:id/work-site', authMiddleware, async (req, res) => {
+    const workerId = String(req.params.id);
+    if (!requireOwnWorkerOrAdmin(req, res, workerId)) {
+      return;
+    }
+
+    const worker = await prisma.worker.findUnique({ where: { id: workerId } });
+    if (!worker) {
+      res.status(404).json({ error: 'Worker not found' });
+      return;
+    }
+
+    const parsed = workSiteCreateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.flatten() });
+      return;
+    }
+
+    await prisma.workSite.updateMany({
+      where: { workerId, isActive: true },
+      data: { isActive: false, endedAt: new Date() }
+    });
+
+    const site = await prisma.workSite.create({
+      data: {
+        workerId,
+        address: parsed.data.address,
+        latitude: parsed.data.latitude,
+        longitude: parsed.data.longitude,
+        radiusMeters: parsed.data.radiusMeters ?? 5,
+        isActive: true,
+        startedAt: new Date(),
+        geolocationEnabled: true,
+        geolocationDisabledAt: null,
+        geolocationDisabledReason: null,
+        geolocationResumedAt: null
+      }
+    });
+
+    res.status(201).json(site);
+  });
+
+  app.post('/api/v1/work-sites/:id/geolocation-state', authMiddleware, async (req, res) => {
+    const site = await prisma.workSite.findUnique({ where: { id: req.params.id } });
+    if (!site) {
+      res.status(404).json({ error: 'Work site not found' });
+      return;
+    }
+
+    if (!requireOwnWorkerOrAdmin(req, res, site.workerId)) {
+      return;
+    }
+
+    const parsed = workSiteGeolocationStateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.flatten() });
+      return;
+    }
+
+    if (!parsed.data.enabled && !parsed.data.reason?.trim()) {
+      res.status(400).json({ error: 'Disable reason is required' });
+      return;
+    }
+
+    const now = new Date();
+    const updatedSite = await prisma.workSite.update({
+      where: { id: site.id },
+      data: parsed.data.enabled
+        ? {
+            geolocationEnabled: true,
+            geolocationResumedAt: now,
+            leftAt: null
+          }
+        : {
+            geolocationEnabled: false,
+            geolocationDisabledAt: now,
+            geolocationDisabledReason: parsed.data.reason?.trim(),
+            leftAt: site.leftAt ?? now
+          }
+    });
+
+    res.json({ site: updatedSite });
+  });
+
+  app.post('/api/v1/work-sites/:id/start-shift', authMiddleware, async (req, res) => {
+    const site = await prisma.workSite.findUnique({ where: { id: req.params.id } });
+    if (!site) {
+      res.status(404).json({ error: 'Work site not found' });
+      return;
+    }
+
+    if (!requireOwnWorkerOrAdmin(req, res, site.workerId)) {
+      return;
+    }
+
+    if (!site.geolocationEnabled) {
+      res.status(409).json({ error: 'Enable geolocation before starting shift' });
+      return;
+    }
+
+    if (site.isShiftActive) {
+      res.status(409).json({ error: 'Shift is already active' });
+      return;
+    }
+
+    const parsed = workShiftReportSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.flatten() });
+      return;
+    }
+
+    const now = new Date();
+    const updatedSite = await prisma.workSite.update({
+      where: { id: site.id },
+      data: {
+        isShiftActive: true,
+        shiftStartedAt: now,
+        shiftEndedAt: null,
+        leftAt: null
+      }
+    });
+
+    const report = await prisma.workPhotoReport.create({
+      data: {
+        workerId: site.workerId,
+        workSiteId: site.id,
+        workDate: new Date(`${toLocalDateKey(now)}T12:00:00`),
+        photoUrl: parsed.data.photoUrl ?? parsed.data.photoUrls?.[0] ?? '',
+        photoUrls: parsed.data.photoUrls ?? (parsed.data.photoUrl ? [parsed.data.photoUrl] : []),
+        reportType: 'start',
+        note: parsed.data.note
+      }
+    });
+
+    res.status(201).json({ site: updatedSite, report });
+  });
+
+  app.post('/api/v1/work-sites/:id/finish-shift', authMiddleware, async (req, res) => {
+    const site = await prisma.workSite.findUnique({ where: { id: req.params.id } });
+    if (!site) {
+      res.status(404).json({ error: 'Work site not found' });
+      return;
+    }
+
+    if (!requireOwnWorkerOrAdmin(req, res, site.workerId)) {
+      return;
+    }
+
+    if (!site.isShiftActive || !site.shiftStartedAt) {
+      res.status(409).json({ error: 'Shift is not active' });
+      return;
+    }
+
+    const parsed = workShiftReportSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.flatten() });
+      return;
+    }
+
+    const finishedAt = new Date();
+    const totalMinutes = Math.max(1, Math.round((finishedAt.getTime() - site.shiftStartedAt.getTime()) / 60000));
+
+    const workDateKey = toLocalDateKey(site.shiftStartedAt);
+    await prisma.workLog.create({
+      data: {
+        workerId: site.workerId,
+        workDate: new Date(`${workDateKey}T12:00:00`),
+        startedAt: site.shiftStartedAt,
+        endedAt: finishedAt,
+        totalMinutes
+      }
+    });
+
+    const report = await prisma.workPhotoReport.create({
+      data: {
+        workerId: site.workerId,
+        workSiteId: site.id,
+        workDate: new Date(`${workDateKey}T12:00:00`),
+        photoUrl: parsed.data.photoUrl ?? parsed.data.photoUrls?.[0] ?? '',
+        photoUrls: parsed.data.photoUrls ?? (parsed.data.photoUrl ? [parsed.data.photoUrl] : []),
+        reportType: 'end',
+        note: parsed.data.note
+      }
+    });
+
+    const updatedSite = await prisma.workSite.update({
+      where: { id: site.id },
+      data: {
+        isShiftActive: false,
+        shiftEndedAt: finishedAt,
+        leftAt: finishedAt
+      }
+    });
+
+    res.status(201).json({ site: updatedSite, report, totalMinutes });
+  });
+
+  app.post('/api/v1/work-sites/:id/pings', authMiddleware, async (req, res) => {
+    const site = await prisma.workSite.findUnique({ where: { id: req.params.id } });
+    if (!site) {
+      res.status(404).json({ error: 'Work site not found' });
+      return;
+    }
+
+    if (!requireOwnWorkerOrAdmin(req, res, site.workerId)) {
+      return;
+    }
+
+    if (!site.geolocationEnabled) {
+      res.status(409).json({ error: 'Geolocation is disabled for this shift', disabledReason: site.geolocationDisabledReason ?? null });
+      return;
+    }
+
+    const parsed = workSitePingSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.flatten() });
+      return;
+    }
+
+    const distanceMeters = calculateDistanceMeters(
+      { latitude: site.latitude, longitude: site.longitude },
+      { latitude: parsed.data.latitude, longitude: parsed.data.longitude }
+    );
+    const isInside = distanceMeters <= site.radiusMeters;
+
+    const ping = await prisma.workSitePing.create({
+      data: {
+        workSiteId: site.id,
+        workerId: site.workerId,
+        latitude: parsed.data.latitude,
+        longitude: parsed.data.longitude,
+        accuracyMeters: parsed.data.accuracyMeters,
+        distanceMeters,
+        isInside
+      }
+    });
+
+    const shouldMarkLeft = !isInside && !site.leftAt;
+
+    await prisma.workSite.update({
+      where: { id: site.id },
+      data: {
+        lastPingAt: new Date(),
+        lastPingLatitude: parsed.data.latitude,
+        lastPingLongitude: parsed.data.longitude,
+        lastDistanceMeters: distanceMeters,
+        ...(shouldMarkLeft ? { leftAt: new Date() } : {})
+      }
+    });
+
+    res.status(201).json({
+      ping,
+      isInside,
+      distanceMeters,
+      radiusMeters: site.radiusMeters,
+      leftAt: shouldMarkLeft ? new Date() : site.leftAt ?? null
+    });
+  });
+
+  app.get('/api/v1/workers/:id/photo-reports', authMiddleware, async (req, res) => {
+    const workerId = String(req.params.id);
+    if (!requireOwnWorkerOrAdmin(req, res, workerId)) {
+      return;
+    }
+
+    const month = typeof req.query.month === 'string' ? req.query.month : undefined;
+    const items = await prisma.workPhotoReport.findMany({
+      where: { workerId },
+      orderBy: [{ workDate: 'desc' }, { createdAt: 'desc' }]
+    });
+
+    const filteredItems = month
+      ? items.filter((entry: any) => toLocalDateKey(entry.workDate).slice(0, 7) === month)
+      : items;
+
+    res.json({ items: filteredItems });
+  });
+
+  app.post('/api/v1/workers/:id/photo-reports', authMiddleware, async (req, res) => {
+    const workerId = String(req.params.id);
+    if (!requireOwnWorkerOrAdmin(req, res, workerId)) {
+      return;
+    }
+
+    const worker = await prisma.worker.findUnique({ where: { id: workerId } });
+    if (!worker) {
+      res.status(404).json({ error: 'Worker not found' });
+      return;
+    }
+
+    const parsed = workPhotoReportCreateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.flatten() });
+      return;
+    }
+
+    const activeSite = await prisma.workSite.findFirst({
+      where: { workerId, isActive: true },
+      orderBy: { startedAt: 'desc' }
+    });
+
+    const report = await prisma.workPhotoReport.create({
+      data: {
+        workerId,
+        workSiteId: activeSite?.id,
+        workDate: new Date(`${parsed.data.workDate}T12:00:00`),
+        photoUrl: parsed.data.photoUrl ?? parsed.data.photoUrls?.[0] ?? '',
+        photoUrls: parsed.data.photoUrls ?? (parsed.data.photoUrl ? [parsed.data.photoUrl] : []),
+        reportType: parsed.data.reportType ?? 'end',
+        note: parsed.data.note
+      }
+    });
+
+    res.status(201).json(report);
+  });
+
   app.get('/api/v1/workers/:id/salary', authMiddleware, async (req, res) => {
     if (!requireAdminRole(req, res)) {
       return;
@@ -615,10 +1128,17 @@ export function createApp() {
     }
 
     const entries = await prisma.timeEntry.findMany({ where: { workerId: worker.id, month } });
+    const advances = await prisma.workerAdvance.findMany({
+      where: { workerId: worker.id },
+      orderBy: [{ advanceDate: 'desc' }, { createdAt: 'desc' }]
+    });
+    const monthAdvances = advances.filter((advance: { advanceDate: Date }) => toMonthKey(advance.advanceDate) === month);
     const regularHours = entries.reduce((sum: number, entry: { regularHours: number }) => sum + entry.regularHours, 0);
     const overtimeHours = entries.reduce((sum: number, entry: { overtimeHours: number }) => sum + entry.overtimeHours, 0);
     const regularPay = worker.hourlyRateOre * regularHours;
     const overtimePay = Math.round(worker.hourlyRateOre * 0.4 * overtimeHours);
+    const totalPayOre = regularPay + overtimePay;
+    const advancesPaidOre = monthAdvances.reduce((sum: number, advance: { amountOre: number }) => sum + advance.amountOre, 0);
 
     res.json({
       workerId: worker.id,
@@ -628,7 +1148,10 @@ export function createApp() {
       overtimeHours,
       regularPayOre: regularPay,
       overtimePayOre: overtimePay,
-      totalPayOre: regularPay + overtimePay
+      totalPayOre,
+      advancesPaidOre,
+      remainingPayOre: totalPayOre - advancesPaidOre,
+      advances: monthAdvances
     });
   });
 
@@ -761,6 +1284,103 @@ export function createApp() {
     }
 
     await prisma.workLog.delete({ where: { id: req.params.id } });
+    res.status(204).send();
+  });
+
+  app.get('/api/v1/workers/:id/advances', authMiddleware, async (req, res) => {
+    if (!requireAdminRole(req, res)) {
+      return;
+    }
+
+    const worker = await prisma.worker.findUnique({ where: { id: req.params.id } });
+    if (!worker) {
+      res.status(404).json({ error: 'Worker not found' });
+      return;
+    }
+
+    const month = typeof req.query.month === 'string' ? req.query.month : undefined;
+    const items = await prisma.workerAdvance.findMany({
+      where: { workerId: worker.id },
+      orderBy: [{ advanceDate: 'desc' }, { createdAt: 'desc' }]
+    });
+
+    const filteredItems = month
+      ? items.filter((item: { advanceDate: Date }) => toMonthKey(item.advanceDate) === month)
+      : items;
+
+    res.json({ items: filteredItems });
+  });
+
+  app.post('/api/v1/workers/:id/advances', authMiddleware, async (req, res) => {
+    if (!requireAdminRole(req, res)) {
+      return;
+    }
+
+    const worker = await prisma.worker.findUnique({ where: { id: req.params.id } });
+    if (!worker) {
+      res.status(404).json({ error: 'Worker not found' });
+      return;
+    }
+
+    const parsed = workerAdvanceCreateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.flatten() });
+      return;
+    }
+
+    const created = await prisma.workerAdvance.create({
+      data: {
+        workerId: worker.id,
+        amountOre: parsed.data.amountOre,
+        advanceDate: new Date(`${parsed.data.advanceDate}T12:00:00`),
+        note: parsed.data.note
+      }
+    });
+
+    res.status(201).json(created);
+  });
+
+  app.put('/api/v1/worker-advances/:id', authMiddleware, async (req, res) => {
+    if (!requireAdminRole(req, res)) {
+      return;
+    }
+
+    const existing = await prisma.workerAdvance.findUnique({ where: { id: req.params.id } });
+    if (!existing) {
+      res.status(404).json({ error: 'Advance not found' });
+      return;
+    }
+
+    const parsed = workerAdvanceCreateSchema.partial().safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.flatten() });
+      return;
+    }
+
+    const updated = await prisma.workerAdvance.update({
+      where: { id: req.params.id },
+      data: {
+        ...(parsed.data.amountOre !== undefined ? { amountOre: parsed.data.amountOre } : {}),
+        ...(parsed.data.advanceDate ? { advanceDate: new Date(`${parsed.data.advanceDate}T12:00:00`) } : {}),
+        ...(parsed.data.note !== undefined ? { note: parsed.data.note } : {})
+      }
+    });
+
+    res.json(updated);
+  });
+
+  app.delete('/api/v1/worker-advances/:id', authMiddleware, async (req, res) => {
+    if (!requireAdminRole(req, res)) {
+      return;
+    }
+
+    const existing = await prisma.workerAdvance.findUnique({ where: { id: req.params.id } });
+    if (!existing) {
+      res.status(404).json({ error: 'Advance not found' });
+      return;
+    }
+
+    await prisma.workerAdvance.delete({ where: { id: req.params.id } });
     res.status(204).send();
   });
 

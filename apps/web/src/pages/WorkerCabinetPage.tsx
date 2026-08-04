@@ -59,7 +59,7 @@ export default function WorkerCabinetPage() {
   };
 
   return (
-    <WorkerShell title="Кабинет работника" description="Аккуратная стартовая страница с твоим профилем, быстрыми действиями и уже рабочими настройками: пароль и email-уведомления.">
+    <WorkerShell title="Кабинет работника">
       <div className="grid gap-6 xl:grid-cols-[1fr_0.9fr]">
         <section className="rounded-[2rem] border border-white/10 bg-white/5 p-6 md:p-8">
           <div className="flex flex-col gap-5 md:flex-row md:items-center">
@@ -133,11 +133,6 @@ export default function WorkerCabinetPage() {
             </div>
           </div>
 
-          <div className="rounded-[2rem] border border-emerald-400/20 bg-emerald-400/10 p-6">
-            <p className="text-xs uppercase tracking-[0.25em] text-emerald-100/80">Чистый интерфейс</p>
-            <h3 className="mt-3 text-2xl font-semibold">Без перегруза</h3>
-            <p className="mt-3 text-sm text-emerald-50/80">Теперь в кабинете работника оставлены полезные вещи: профиль, переход в смены, email-уведомления и смена пароля.</p>
-          </div>
         </section>
       </div>
     </WorkerShell>

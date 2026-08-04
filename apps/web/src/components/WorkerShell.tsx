@@ -26,7 +26,6 @@ export default function WorkerShell({ title, description, children }: { title: s
       <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
         <p className="text-xs uppercase tracking-[0.35em] text-emerald-300">Worker Space</p>
         <h2 className="mt-3 text-3xl font-semibold">Личный кабинет</h2>
-        <p className="mt-3 text-sm text-slate-400">Чистый интерфейс для собственных смен, статистики и настроек профиля.</p>
       </div>
 
       <div className="mt-6 space-y-2">

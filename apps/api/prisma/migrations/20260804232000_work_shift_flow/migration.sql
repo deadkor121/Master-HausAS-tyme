@@ -1,0 +1,7 @@
+ALTER TABLE "WorkSite"
+ADD COLUMN "shiftStartedAt" TIMESTAMP(3),
+ADD COLUMN "shiftEndedAt" TIMESTAMP(3),
+ADD COLUMN "isShiftActive" BOOLEAN NOT NULL DEFAULT false;
+
+ALTER TABLE "WorkPhotoReport"
+ADD COLUMN "reportType" TEXT NOT NULL DEFAULT 'end';

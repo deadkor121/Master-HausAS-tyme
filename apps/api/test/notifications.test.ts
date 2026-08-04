@@ -5,6 +5,7 @@ import { createApp } from '../src/index.js';
 
 test('worker notification config endpoint is available for admin', async () => {
   const app = createApp();
+  const workerEmail = `worker.notify.${Date.now()}@masterhaus.no`;
 
   const loginResponse = await request(app)
     .post('/api/v1/auth/login')
@@ -13,7 +14,7 @@ test('worker notification config endpoint is available for admin', async () => {
   const createdWorkerUser = await request(app)
     .post('/api/v1/auth/register')
     .send({
-      email: 'worker.notify@masterhaus.no',
+      email: workerEmail,
       password: 'Masterhaus123!',
       fullName: 'Worker Notify',
       role: 'worker'
@@ -30,7 +31,7 @@ test('worker notification config endpoint is available for admin', async () => {
   assert.equal(typeof response.body.enabled, 'boolean');
   assert.equal(typeof response.body.recipientsCount, 'number');
   assert.ok(Array.isArray(response.body.recipients));
-  assert.ok(response.body.recipients.includes('worker.notify@masterhaus.no'));
+  assert.ok(response.body.recipients.includes(workerEmail));
 });
 
 test('order creation returns worker notification status', async () => {

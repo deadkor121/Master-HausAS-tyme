@@ -19,30 +19,113 @@ model User {
 }
 
 model Order {
-  id             String   @id @default(cuid())
-  orderNumber    String   @unique
+  id             String      @id @default(cuid())
+  orderNumber    String      @unique
   title          String
-  status         String   @default("planned")
+  status         String      @default("planned")
   budgetTotalOre Int
   deadlineDate   DateTime
   payments       Payment[]
   timeEntries    TimeEntry[]
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
 }
 
 model Worker {
-  id            String   @id @default(cuid())
+  id            String          @id @default(cuid())
   fullName      String
   role          String
   hourlyRateOre Int
   skillTags     String[]
   brigadeName   String?
-  isActive      Boolean  @default(true)
+  phone         String?
+  email         String?
+  photoUrl      String?
+  bio           String?
+  isActive      Boolean         @default(true)
   timeEntries   TimeEntry[]
   workLogs      WorkLog[]
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  advances      WorkerAdvance[]
+  workSites     WorkSite[]
+  geoPings      WorkSitePing[]
+  photoReports  WorkPhotoReport[]
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+}
+
+model WorkSite {
+  id                 String          @id @default(cuid())
+  workerId           String
+  worker             Worker          @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  address            String
+  latitude           Float
+  longitude          Float
+  radiusMeters       Int             @default(5)
+  isActive           Boolean         @default(true)
+  startedAt          DateTime        @default(now())
+  endedAt            DateTime?
+  leftAt             DateTime?
+  geolocationEnabled Boolean         @default(true)
+  geolocationDisabledAt DateTime?
+  geolocationDisabledReason String?
+  geolocationResumedAt DateTime?
+  shiftStartedAt       DateTime?
+  shiftEndedAt         DateTime?
+  isShiftActive        Boolean         @default(false)
+  lastPingAt         DateTime?
+  lastPingLatitude   Float?
+  lastPingLongitude  Float?
+  lastDistanceMeters Float?
+  pings              WorkSitePing[]
+  photoReports       WorkPhotoReport[]
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  @@index([workerId, isActive])
+}
+
+model WorkSitePing {
+  id             String   @id @default(cuid())
+  workSiteId     String
+  workSite       WorkSite @relation(fields: [workSiteId], references: [id], onDelete: Cascade)
+  workerId       String
+  worker         Worker   @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  latitude       Float
+  longitude      Float
+  accuracyMeters Float?
+  distanceMeters Float
+  isInside       Boolean
+  createdAt      DateTime @default(now())
+
+  @@index([workerId, createdAt])
+  @@index([workSiteId, createdAt])
+}
+
+model WorkPhotoReport {
+  id         String    @id @default(cuid())
+  workerId   String
+  worker     Worker    @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  workSiteId String?
+  workSite   WorkSite? @relation(fields: [workSiteId], references: [id], onDelete: SetNull)
+  workDate   DateTime
+  photoUrl   String
+  photoUrls  Json?
+  reportType String    @default("end")
+  note       String?
+  createdAt  DateTime  @default(now())
+
+  @@index([workerId, workDate])
+}
+
+model WorkerAdvance {
+  id          String   @id @default(cuid())
+  workerId    String
+  worker      Worker   @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  amountOre   Int
+  advanceDate DateTime
+  note        String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 model Payment {

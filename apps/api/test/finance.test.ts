@@ -5,25 +5,61 @@ import { createApp } from '../src/index.js';
 
 test('finance monthly report returns revenue expenses and profit', async () => {
   const app = createApp();
+  const reportMonth = `2026-${String((Date.now() % 12) + 1).padStart(2, '0')}`;
 
   const loginResponse = await request(app)
     .post('/api/v1/auth/login')
     .send({ email: 'admin@masterhaus.no', password: 'Masterhaus123!' });
 
+  const createdWorker = await request(app)
+    .post('/api/v1/workers')
+    .set('Authorization', `Bearer ${loginResponse.body.accessToken}`)
+    .send({
+      fullName: `Finance Worker ${Date.now()}`,
+      role: 'carpenter',
+      hourlyRateOre: 25000,
+      skillTags: ['finance-test'],
+      brigadeName: 'Finance Brigade',
+      isActive: true
+    });
+
+  assert.equal(createdWorker.status, 201);
+
+  const ordersResponse = await request(app)
+    .get('/api/v1/orders')
+    .set('Authorization', `Bearer ${loginResponse.body.accessToken}`);
+
+  const baseline = await request(app)
+    .get(`/api/v1/finance/monthly-report?month=${reportMonth}`)
+    .set('Authorization', `Bearer ${loginResponse.body.accessToken}`);
+
+  assert.equal(baseline.status, 200);
+
+  const createdTimeEntry = await request(app)
+    .post(`/api/v1/workers/${createdWorker.body.id}/time-entries`)
+    .set('Authorization', `Bearer ${loginResponse.body.accessToken}`)
+    .send({
+      orderId: ordersResponse.body.items[0].id,
+      month: reportMonth,
+      regularHours: 100,
+      overtimeHours: 10
+    });
+
+  assert.equal(createdTimeEntry.status, 201);
+
   const response = await request(app)
-    .get('/api/v1/finance/monthly-report?month=2026-07')
+    .get(`/api/v1/finance/monthly-report?month=${reportMonth}`)
     .set('Authorization', `Bearer ${loginResponse.body.accessToken}`);
 
   assert.equal(response.status, 200);
   assert.ok(typeof response.body.revenue === 'number');
   assert.ok(typeof response.body.netProfit === 'number');
-  assert.equal(response.body.expenses.salaries, 8381000);
+  assert.equal(response.body.expenses.salaries - baseline.body.expenses.salaries, 2600000);
 });
 
 test('payments and expenses CRUD affect monthly finance report', async () => {
   const app = createApp();
-  const month = `2026-${String((Date.now() % 12) + 1).padStart(2, '0')}-${String(Date.now()).slice(-2)}`;
-  const reportMonth = month.slice(0, 7);
+  const reportMonth = `2026-${String((Date.now() % 12) + 1).padStart(2, '0')}`;
 
   const loginResponse = await request(app)
     .post('/api/v1/auth/login')
@@ -34,6 +70,12 @@ test('payments and expenses CRUD affect monthly finance report', async () => {
     .set('Authorization', `Bearer ${loginResponse.body.accessToken}`);
 
   const orderId = ordersResponse.body.items[0].id;
+
+  const baseline = await request(app)
+    .get(`/api/v1/finance/monthly-report?month=${reportMonth}`)
+    .set('Authorization', `Bearer ${loginResponse.body.accessToken}`);
+
+  assert.equal(baseline.status, 200);
 
   const createdPayment = await request(app)
     .post('/api/v1/payments')
@@ -95,9 +137,9 @@ test('payments and expenses CRUD affect monthly finance report', async () => {
     .set('Authorization', `Bearer ${loginResponse.body.accessToken}`);
 
   assert.equal(report.status, 200);
-  assert.equal(report.body.revenue, 3100000);
-  assert.equal(report.body.expenses.materials, 0);
-  assert.equal(report.body.expenses.other, 650000);
+  assert.equal(report.body.revenue - baseline.body.revenue, 3100000);
+  assert.equal(report.body.expenses.materials - baseline.body.expenses.materials, 0);
+  assert.equal(report.body.expenses.other - baseline.body.expenses.other, 650000);
 
   const deletedPayment = await request(app)
     .delete(`/api/v1/payments/${createdPayment.body.id}`)

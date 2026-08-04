@@ -54,6 +54,7 @@ dist
 .env
 apps/api/dist
 apps/web/dist
+apps/web/test-results/
 
 /generated/prisma
 .vercel

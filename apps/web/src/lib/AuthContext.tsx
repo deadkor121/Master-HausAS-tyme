@@ -1,12 +1,12 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import { changePassword, clearAuth, login, register, restoreSession, updateAuthSettings, type AuthRole, type AuthUser } from './auth';
+import { changePassword, clearAuth, login, register, restoreSession, updateAuthSettings, type AuthRole, type AuthUser, type RegisterPayload } from './auth';
 
 type AuthContextValue = {
   user: AuthUser | null;
   isReady: boolean;
   loginUser: (email: string, password: string) => Promise<AuthUser>;
-  registerUser: (payload: { email: string; password: string; fullName: string; role: AuthRole }) => Promise<AuthUser>;
+  registerUser: (payload: RegisterPayload) => Promise<AuthUser>;
   updateSettings: (payload: { emailNotificationsEnabled: boolean }) => Promise<AuthUser>;
   changeUserPassword: (payload: { currentPassword: string; newPassword: string }) => Promise<void>;
   logout: () => void;

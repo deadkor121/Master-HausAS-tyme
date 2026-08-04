@@ -17,6 +17,17 @@ export type AuthUser = {
   emailNotificationsEnabled?: boolean;
 };
 
+export type RegisterPayload = {
+  email: string;
+  password: string;
+  fullName: string;
+  role: AuthRole;
+  phone?: string;
+  photoUrl?: string;
+  skillTags?: string[];
+  bio?: string;
+};
+
 function setAxiosToken(token: string | null) {
   if (token) {
     axios.defaults.headers.common[ACCESS_TOKEN_HEADER] = `${BEARER_PREFIX}${token}`;
@@ -73,7 +84,7 @@ export async function login(email: string, password: string) {
   return user;
 }
 
-export async function register(payload: { email: string; password: string; fullName: string; role: AuthRole }) {
+export async function register(payload: RegisterPayload) {
   const response = await axios.post(`${API_BASE}/api/v1/auth/register`, payload);
   const accessToken = response.data?.accessToken as string;
   const user = response.data?.user as AuthUser;
