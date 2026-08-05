@@ -2,6 +2,8 @@ import axios from 'axios';
 import { API_BASE } from './apiBase';
 import { ensureAccessToken } from './auth';
 
+const cloudinaryHttp = axios.create();
+
 type UploadSignature = {
   cloudName: string;
   apiKey: string;
@@ -26,7 +28,7 @@ export async function uploadWorkerPhoto(file: File) {
   formData.append('signature', signature);
   formData.append('folder', folder);
 
-  const uploadResponse = await axios.post(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, formData);
+  const uploadResponse = await cloudinaryHttp.post(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, formData);
   return uploadResponse.data.secure_url as string;
 }
 
@@ -45,7 +47,7 @@ export async function uploadRegistrationPhoto(file: File) {
   formData.append('folder', 'masterhaus/registration');
 
   try {
-    const uploadResponse = await axios.post(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, formData);
+    const uploadResponse = await cloudinaryHttp.post(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, formData);
     return uploadResponse.data.secure_url as string;
   } catch {
     // If preset upload fails (invalid preset / CORS / disabled unsigned uploads), retry via backend signature.

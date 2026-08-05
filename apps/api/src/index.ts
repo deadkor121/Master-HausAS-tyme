@@ -228,7 +228,7 @@ const workSiteCreateSchema = z.object({
 const workSitePingSchema = z.object({
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
-  accuracyMeters: z.number().nonnegative().max(1000).optional()
+  accuracyMeters: z.number().nonnegative().max(10000).optional()
 });
 
 const workSiteGeolocationStateSchema = z.object({
