@@ -475,8 +475,8 @@ export default function WorkerAttendancePage() {
       setFeedback({ type: 'error', text: 'Перед стартом смены включите геолокацию.' });
       return;
     }
-    if (shiftStartForm.photoUrls.length === 0 || !shiftStartForm.note.trim()) {
-      setFeedback({ type: 'error', text: 'Для начала смены добавьте фото и опишите, что будете делать сегодня.' });
+    if (shiftStartForm.photoUrls.length === 0 || shiftStartForm.note.trim().length < 3) {
+      setFeedback({ type: 'error', text: 'Для начала смены добавьте фото и опишите план работ (минимум 3 символа).' });
       return;
     }
 
@@ -508,8 +508,8 @@ export default function WorkerAttendancePage() {
       setFeedback({ type: 'error', text: 'Сначала сохраните адрес работ и выберите работника.' });
       return;
     }
-    if (shiftEndForm.photoUrls.length === 0 || !shiftEndForm.note.trim()) {
-      setFeedback({ type: 'error', text: 'Для завершения смены добавьте фото и краткий итог работ.' });
+    if (shiftEndForm.photoUrls.length === 0 || shiftEndForm.note.trim().length < 3) {
+      setFeedback({ type: 'error', text: 'Для завершения смены добавьте фото и итог работ (минимум 3 символа).' });
       return;
     }
 

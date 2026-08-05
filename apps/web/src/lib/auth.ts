@@ -165,14 +165,37 @@ export function handleAuthError(error: unknown): boolean {
 
 export function describeAxiosError(error: unknown): string {
   if (isAxiosError(error)) {
-    const apiMessage = (error.response?.data as { error?: unknown } | undefined)?.error;
+    const responseData = error.response?.data as { error?: unknown; message?: unknown } | undefined;
+    const apiMessage = responseData?.error;
     if (typeof apiMessage === 'string' && apiMessage.length > 0) {
       return apiMessage;
     }
-    return `Request failed (${error.response?.status ?? 'network'})`;
+
+    if (apiMessage && typeof apiMessage === 'object') {
+      const flattened = apiMessage as { formErrors?: string[]; fieldErrors?: Record<string, string[]> };
+      const formError = flattened.formErrors?.find((item) => typeof item === 'string' && item.length > 0);
+      if (formError) {
+        return formError;
+      }
+
+      if (flattened.fieldErrors) {
+        for (const fieldErrors of Object.values(flattened.fieldErrors)) {
+          const fieldError = fieldErrors?.find((item) => typeof item === 'string' && item.length > 0);
+          if (fieldError) {
+            return fieldError;
+          }
+        }
+      }
+    }
+
+    if (typeof responseData?.message === 'string' && responseData.message.length > 0) {
+      return responseData.message;
+    }
+
+    return `Запрос не выполнен (${error.response?.status ?? 'network'})`;
   }
   if (error instanceof Error) {
     return error.message;
   }
-  return 'Unexpected error';
+  return 'Непредвиденная ошибка';
 }
