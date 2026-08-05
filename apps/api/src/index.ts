@@ -347,6 +347,13 @@ function toFixedHours(minutes: number) {
   return Math.round((minutes / 60) * 100) / 100;
 }
 
+function normalizeRadiusMeters(radiusMeters?: number | null) {
+  if (!Number.isFinite(radiusMeters)) {
+    return 5;
+  }
+  return Math.min(200, Math.max(5, Math.round(Number(radiusMeters))));
+}
+
 function requireAdminRole(req: express.Request, res: express.Response) {
   if (!req.user || req.user.role !== 'admin') {
     res.status(403).json({ error: 'Forbidden' });
@@ -1000,12 +1007,32 @@ export function createApp() {
       return;
     }
 
-    const site = await prisma.workSite.findFirst({
+    const activeShiftSite = await prisma.workSite.findFirst({
+      where: { workerId, isShiftActive: true },
+      orderBy: { shiftStartedAt: 'desc' }
+    });
+
+    const activeSite = activeShiftSite ?? await prisma.workSite.findFirst({
       where: { workerId, isActive: true },
       orderBy: { startedAt: 'desc' }
     });
 
-    res.json({ site });
+    if (!activeSite) {
+      res.json({ site: null });
+      return;
+    }
+
+    const normalizedRadiusMeters = normalizeRadiusMeters(activeSite.radiusMeters);
+    if (activeSite.radiusMeters !== normalizedRadiusMeters) {
+      const updated = await prisma.workSite.update({
+        where: { id: activeSite.id },
+        data: { radiusMeters: normalizedRadiusMeters }
+      });
+      res.json({ site: updated });
+      return;
+    }
+
+    res.json({ site: activeSite });
   });
 
   app.post('/api/v1/workers/:id/work-site', authMiddleware, async (req, res) => {
@@ -1017,6 +1044,14 @@ export function createApp() {
     const worker = await prisma.worker.findUnique({ where: { id: workerId } });
     if (!worker) {
       res.status(404).json({ error: 'Worker not found' });
+      return;
+    }
+
+    const hasActiveShift = await prisma.workSite.findFirst({
+      where: { workerId, isShiftActive: true }
+    });
+    if (hasActiveShift) {
+      res.status(409).json({ error: 'Finish active shift before changing work address' });
       return;
     }
 
@@ -1037,7 +1072,7 @@ export function createApp() {
         address: parsed.data.address,
         latitude: parsed.data.latitude,
         longitude: parsed.data.longitude,
-        radiusMeters: parsed.data.radiusMeters ?? 5,
+        radiusMeters: normalizeRadiusMeters(parsed.data.radiusMeters ?? 5),
         isActive: true,
         startedAt: new Date(),
         geolocationEnabled: true,
@@ -1227,11 +1262,12 @@ export function createApp() {
       return;
     }
 
+    const effectiveRadiusMeters = normalizeRadiusMeters(site.radiusMeters);
     const distanceMeters = calculateDistanceMeters(
       { latitude: site.latitude, longitude: site.longitude },
       { latitude: parsed.data.latitude, longitude: parsed.data.longitude }
     );
-    const isInside = distanceMeters <= site.radiusMeters;
+    const isInside = distanceMeters <= effectiveRadiusMeters;
 
     const ping = await prisma.workSitePing.create({
       data: {
@@ -1250,6 +1286,7 @@ export function createApp() {
     await prisma.workSite.update({
       where: { id: site.id },
       data: {
+        ...(site.radiusMeters !== effectiveRadiusMeters ? { radiusMeters: effectiveRadiusMeters } : {}),
         lastPingAt: new Date(),
         lastPingLatitude: parsed.data.latitude,
         lastPingLongitude: parsed.data.longitude,
@@ -1262,7 +1299,7 @@ export function createApp() {
       ping,
       isInside,
       distanceMeters,
-      radiusMeters: site.radiusMeters,
+      radiusMeters: effectiveRadiusMeters,
       leftAt: shouldMarkLeft ? new Date() : site.leftAt ?? null
     });
   });

@@ -149,8 +149,10 @@ test('worker geofence marks leave event and stores photo reports', async () => {
   assert.equal(reportsListResponse.status, 200);
   assert.ok(Array.isArray(reportsListResponse.body.items));
   assert.equal(reportsListResponse.body.items.length >= 1, true);
-  assert.ok(Array.isArray(reportsListResponse.body.items[0].photoUrls));
-  assert.equal(reportsListResponse.body.items[0].photoUrls.length, 2);
+  const manualReport = reportsListResponse.body.items.find((entry: { note?: string; photoUrls?: string[] }) => entry.note === 'Finished wall prep and cable routing');
+  assert.ok(manualReport);
+  assert.ok(Array.isArray(manualReport.photoUrls));
+  assert.equal(manualReport.photoUrls.length, 2);
   assert.equal(reportsListResponse.body.items.some((entry: { reportType?: string }) => entry.reportType === 'start'), true);
   assert.equal(reportsListResponse.body.items.some((entry: { reportType?: string }) => entry.reportType === 'end'), true);
 
