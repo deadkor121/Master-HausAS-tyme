@@ -42,6 +42,7 @@ export default function AdminDashboardPage() {
   const [selectedSyncMonth, setSelectedSyncMonth] = useState(getCurrentMonthKey());
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
+  const [workerActions, setWorkerActions] = useState<Record<string, 'none' | 'summary' | 'geo' | 'photos'>>({});
 
   useEffect(() => {
     const refreshMs = Number(new URLSearchParams(window.location.search).get('refreshMs') ?? 45000);
@@ -143,52 +144,98 @@ export default function AdminDashboardPage() {
           <TeamGeoMap items={mapItems} />
         </div>
 
-        <div className="grid gap-4">
+        <div className="grid gap-3">
           {workersGeo.map((item) => {
             const reportPhotos = Array.isArray(item.latestReport?.photoUrls)
               ? item.latestReport?.photoUrls
               : item.latestReport?.photoUrl ? [item.latestReport.photoUrl] : [];
+            const selectedAction = workerActions[item.workerId] ?? 'none';
+            const statusLabel = item.site?.geolocationEnabled === false
+              ? 'Геолокация выключена'
+              : item.site?.leftAt
+                ? 'Закончил работу'
+                : 'Сейчас в работе';
+            const statusClassName = item.site?.geolocationEnabled === false
+              ? 'bg-amber-500/20 text-amber-200'
+              : item.site?.leftAt
+                ? 'bg-rose-500/20 text-rose-200'
+                : 'bg-emerald-500/20 text-emerald-200';
 
             return (
-              <article key={item.workerId} className="rounded-[2rem] border border-white/10 bg-white/5 p-5 md:p-6">
-                <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                  <h3 className="text-xl font-semibold">{item.workerName}</h3>
-                  <span className={`rounded-full px-3 py-1 text-xs ${item.site?.geolocationEnabled === false ? 'bg-amber-500/20 text-amber-200' : item.site?.leftAt ? 'bg-rose-500/20 text-rose-200' : 'bg-emerald-500/20 text-emerald-200'}`}>
-                    {item.site?.geolocationEnabled === false ? 'Геолокация выключена' : item.site?.leftAt ? 'Закончил работу' : 'Сейчас в работе'}
-                  </span>
+              <article key={item.workerId} className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-base font-semibold">{item.workerName}</h3>
+                    <span className={`rounded-full px-2 py-0.5 text-[11px] ${statusClassName}`}>{statusLabel}</span>
+                    <span className="text-xs text-slate-500">{item.site?.address ?? 'Адрес не задан'}</span>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      className="rounded-md border border-white/15 bg-slate-900/60 px-2 py-1 text-xs text-slate-100"
+                      value={selectedAction}
+                      onChange={(event) => {
+                        const value = event.target.value as 'none' | 'summary' | 'geo' | 'photos';
+                        setWorkerActions((previous) => ({ ...previous, [item.workerId]: value }));
+                      }}
+                    >
+                      <option value="none">Действие...</option>
+                      <option value="summary">Кратко по смене</option>
+                      <option value="geo">Геолокация</option>
+                      <option value="photos">Фотоотчеты</option>
+                    </select>
+                    <button
+                      type="button"
+                      className="rounded-md border border-white/15 px-2 py-1 text-xs text-slate-300"
+                      onClick={() => setWorkerActions((previous) => ({ ...previous, [item.workerId]: 'none' }))}
+                    >
+                      Скрыть
+                    </button>
+                  </div>
                 </div>
 
-                <div className="mt-4 grid gap-3 md:grid-cols-3 text-sm">
-                  <p><span className="text-slate-500">Где работает:</span> {item.site?.address ?? 'адрес не задан'}</p>
-                  <p><span className="text-slate-500">Когда закончил:</span> {item.site?.leftAt ? new Date(item.site.leftAt).toLocaleString('ru-RU') : 'еще на объекте'}</p>
-                  <p><span className="text-slate-500">Последний пинг:</span> {item.site?.lastPingAt ? new Date(item.site.lastPingAt).toLocaleString('ru-RU') : 'нет данных'}</p>
-                </div>
-
-                {item.site?.geolocationEnabled === false ? (
-                  <div className="mt-4 rounded-[1.25rem] border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
-                    <p><span className="text-amber-200/80">Работник отключил геолокацию:</span> {item.site.geolocationDisabledAt ? new Date(item.site.geolocationDisabledAt).toLocaleString('ru-RU') : 'время не зафиксировано'}</p>
-                    <p className="mt-1"><span className="text-amber-200/80">Причина:</span> {item.site.geolocationDisabledReason ?? 'не указана'}</p>
+                {selectedAction === 'summary' ? (
+                  <div className="mt-3 grid gap-2 rounded-xl border border-white/10 bg-slate-950/30 p-3 text-xs sm:grid-cols-3">
+                    <p><span className="text-slate-500">Где работает:</span> {item.site?.address ?? 'адрес не задан'}</p>
+                    <p><span className="text-slate-500">Когда закончил:</span> {item.site?.leftAt ? new Date(item.site.leftAt).toLocaleString('ru-RU') : 'еще на объекте'}</p>
+                    <p><span className="text-slate-500">Последний пинг:</span> {item.site?.lastPingAt ? new Date(item.site.lastPingAt).toLocaleString('ru-RU') : 'нет данных'}</p>
                   </div>
                 ) : null}
 
-                <div className="mt-4 rounded-[1.25rem] border border-white/10 bg-slate-950/40 p-4">
-                  <p className="text-sm text-slate-400">Фотоотчет работника</p>
-                  {item.latestReport ? (
-                    <>
-                      <p className="mt-2 text-sm text-slate-500">Дата: {String(item.latestReport.workDate).slice(0, 10)}</p>
-                      {item.latestReport.note ? <p className="mt-2 text-sm text-slate-300">Описание: {item.latestReport.note}</p> : <p className="mt-2 text-sm text-slate-500">Описание не добавлено.</p>}
-                      {reportPhotos.length > 0 ? (
-                        <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                          {reportPhotos.map((photoUrl, index) => (
-                            <img key={`${item.workerId}-${index}`} src={photoUrl} alt={`Фотоотчет ${index + 1}`} className="h-32 w-full rounded-xl object-cover" />
-                          ))}
-                        </div>
-                      ) : <p className="mt-2 text-sm text-slate-500">Фото не загружены.</p>}
-                    </>
-                  ) : (
-                    <p className="mt-2 text-sm text-slate-500">Работник еще не отправлял фотоотчет.</p>
-                  )}
-                </div>
+                {selectedAction === 'geo' ? (
+                  <div className="mt-3 rounded-xl border border-white/10 bg-slate-950/30 p-3 text-xs text-slate-300">
+                    <p><span className="text-slate-500">Геолокация:</span> {item.site?.geolocationEnabled === false ? 'выключена' : 'включена'}</p>
+                    <p><span className="text-slate-500">Последний пинг:</span> {item.site?.lastPingAt ? new Date(item.site.lastPingAt).toLocaleString('ru-RU') : 'нет данных'}</p>
+                    <p><span className="text-slate-500">Вышел из зоны:</span> {item.site?.leftAt ? new Date(item.site.leftAt).toLocaleString('ru-RU') : 'нет'}</p>
+                    {item.site?.geolocationEnabled === false ? (
+                      <>
+                        <p className="mt-1 text-amber-200"><span className="text-amber-200/70">Отключил в:</span> {item.site.geolocationDisabledAt ? new Date(item.site.geolocationDisabledAt).toLocaleString('ru-RU') : 'время не зафиксировано'}</p>
+                        <p className="text-amber-200"><span className="text-amber-200/70">Причина:</span> {item.site.geolocationDisabledReason ?? 'не указана'}</p>
+                      </>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {selectedAction === 'photos' ? (
+                  <div className="mt-3 rounded-xl border border-white/10 bg-slate-950/30 p-3">
+                    <p className="text-xs text-slate-400">Фотоотчет работника</p>
+                    {item.latestReport ? (
+                      <>
+                        <p className="mt-1 text-xs text-slate-500">Дата: {String(item.latestReport.workDate).slice(0, 10)}</p>
+                        {item.latestReport.note ? <p className="mt-1 text-xs text-slate-300">Описание: {item.latestReport.note}</p> : <p className="mt-1 text-xs text-slate-500">Описание не добавлено.</p>}
+                        {reportPhotos.length > 0 ? (
+                          <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                            {reportPhotos.map((photoUrl, index) => (
+                              <img key={`${item.workerId}-${index}`} src={photoUrl} alt={`Фотоотчет ${index + 1}`} className="h-24 w-full rounded-lg object-cover" />
+                            ))}
+                          </div>
+                        ) : <p className="mt-1 text-xs text-slate-500">Фото не загружены.</p>}
+                      </>
+                    ) : (
+                      <p className="mt-1 text-xs text-slate-500">Работник еще не отправлял фотоотчет.</p>
+                    )}
+                  </div>
+                ) : null}
               </article>
             );
           })}
