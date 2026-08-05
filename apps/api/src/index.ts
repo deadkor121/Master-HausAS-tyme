@@ -1012,7 +1012,12 @@ export function createApp() {
       orderBy: { shiftStartedAt: 'desc' }
     });
 
-    const activeSite = activeShiftSite ?? await prisma.workSite.findFirst({
+    const latestShiftSite = activeShiftSite ?? await prisma.workSite.findFirst({
+      where: { workerId, shiftStartedAt: { not: null } },
+      orderBy: { shiftStartedAt: 'desc' }
+    });
+
+    const activeSite = latestShiftSite ?? await prisma.workSite.findFirst({
       where: { workerId, isActive: true },
       orderBy: { startedAt: 'desc' }
     });
@@ -1148,6 +1153,23 @@ export function createApp() {
       return;
     }
 
+    const anotherActiveShift = await prisma.workSite.findFirst({
+      where: {
+        workerId: site.workerId,
+        isShiftActive: true,
+        NOT: { id: site.id }
+      },
+      orderBy: { shiftStartedAt: 'desc' }
+    });
+    if (anotherActiveShift) {
+      res.status(409).json({
+        error: 'Another shift is already active for this worker',
+        activeWorkSiteId: anotherActiveShift.id,
+        shiftStartedAt: anotherActiveShift.shiftStartedAt
+      });
+      return;
+    }
+
     const parsed = workShiftReportSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.flatten() });
@@ -1230,6 +1252,20 @@ export function createApp() {
 
     const updatedSite = await prisma.workSite.update({
       where: { id: site.id },
+      data: {
+        isShiftActive: false,
+        shiftEndedAt: finishedAt,
+        leftAt: finishedAt
+      }
+    });
+
+    // Defensive cleanup: ensure stale parallel active shifts for the same worker are closed.
+    await prisma.workSite.updateMany({
+      where: {
+        workerId: site.workerId,
+        isShiftActive: true,
+        NOT: { id: site.id }
+      },
       data: {
         isShiftActive: false,
         shiftEndedAt: finishedAt,

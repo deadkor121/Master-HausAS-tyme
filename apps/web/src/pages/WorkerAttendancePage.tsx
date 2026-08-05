@@ -648,6 +648,7 @@ export default function WorkerAttendancePage() {
   const elapsedShiftSeconds = isShiftRunning && shiftStartedAtDate
     ? Math.floor((nowTick - shiftStartedAtDate.getTime()) / 1000)
     : 0;
+  const displayRadiusMeters = Math.max(5, Number(workSite?.radiusMeters ?? 5));
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -813,7 +814,7 @@ export default function WorkerAttendancePage() {
             {workSite ? (
               <div className="rounded-2xl border border-white/10 bg-slate-950/40 p-4 text-sm text-slate-300">
                 <p><span className="text-slate-500">Активный адрес:</span> {workSite.address}</p>
-                <p><span className="text-slate-500">Радиус:</span> {workSite.radiusMeters} м</p>
+                <p><span className="text-slate-500">Радиус:</span> {displayRadiusMeters} м</p>
                 <p><span className="text-slate-500">Геолокация:</span> {workSite.geolocationEnabled === false ? 'отключена' : 'включена'}</p>
                 {workSite.geolocationEnabled === false ? <p><span className="text-slate-500">Причина отключения:</span> {workSite.geolocationDisabledReason ?? 'не указана'}</p> : null}
                 <p><span className="text-slate-500">Последний пинг:</span> {workSite.lastPingAt ? new Date(workSite.lastPingAt).toLocaleString('ru-RU') : 'нет данных'}</p>
