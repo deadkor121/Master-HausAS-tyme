@@ -743,6 +743,123 @@ export function createApp() {
     res.json({ items });
   });
 
+  app.get('/api/v1/workers/calendar-overview', authMiddleware, async (req, res) => {
+    if (!requireAdminRole(req, res)) {
+      return;
+    }
+
+    const month = typeof req.query.month === 'string' ? req.query.month : toMonthKey(new Date());
+    if (!/^\d{4}-\d{2}$/.test(month)) {
+      res.status(400).json({ error: 'Month must match YYYY-MM format' });
+      return;
+    }
+
+    const [year, monthNumber] = month.split('-').map(Number);
+    const monthStart = new Date(year, monthNumber - 1, 1, 0, 0, 0, 0);
+    const monthEnd = new Date(year, monthNumber, 1, 0, 0, 0, 0);
+
+    const [workers, logs, reports] = await Promise.all([
+      prisma.worker.findMany({ orderBy: { fullName: 'asc' } }),
+      prisma.workLog.findMany({
+        where: {
+          workDate: {
+            gte: monthStart,
+            lt: monthEnd
+          }
+        },
+        orderBy: [{ workDate: 'asc' }, { workerId: 'asc' }]
+      }),
+      prisma.workPhotoReport.findMany({
+        where: {
+          workDate: {
+            gte: monthStart,
+            lt: monthEnd
+          }
+        },
+        orderBy: [{ workDate: 'asc' }, { createdAt: 'desc' }]
+      })
+    ]);
+
+    const workerMap = new Map<string, { fullName: string; hourlyRateOre: number }>();
+    for (const worker of workers) {
+      workerMap.set(worker.id, { fullName: worker.fullName, hourlyRateOre: worker.hourlyRateOre });
+    }
+
+    const dayMap = new Map<string, {
+      date: string;
+      totalMinutes: number;
+      totalEarnedOre: number;
+      workers: Map<string, { workerId: string; workerName: string; minutes: number; earnedOre: number; shifts: number }>;
+      reports: Array<{ workerId: string; workerName: string; reportType: string; note: string | null; photoUrl: string; photoUrls: string[]; createdAt: Date }>;
+    }>();
+
+    const ensureDay = (dateKey: string) => {
+      if (!dayMap.has(dateKey)) {
+        dayMap.set(dateKey, {
+          date: dateKey,
+          totalMinutes: 0,
+          totalEarnedOre: 0,
+          workers: new Map(),
+          reports: []
+        });
+      }
+      return dayMap.get(dateKey)!;
+    };
+
+    for (const log of logs) {
+      const worker = workerMap.get(log.workerId);
+      if (!worker) {
+        continue;
+      }
+
+      const dateKey = toLocalDateKey(log.workDate);
+      const day = ensureDay(dateKey);
+      const earnedOre = Math.round((worker.hourlyRateOre * log.totalMinutes) / 60);
+
+      day.totalMinutes += log.totalMinutes;
+      day.totalEarnedOre += earnedOre;
+
+      const existing = day.workers.get(log.workerId) ?? {
+        workerId: log.workerId,
+        workerName: worker.fullName,
+        minutes: 0,
+        earnedOre: 0,
+        shifts: 0
+      };
+      existing.minutes += log.totalMinutes;
+      existing.earnedOre += earnedOre;
+      existing.shifts += 1;
+      day.workers.set(log.workerId, existing);
+    }
+
+    for (const report of reports) {
+      const worker = workerMap.get(report.workerId);
+      const dateKey = toLocalDateKey(report.workDate);
+      const day = ensureDay(dateKey);
+      day.reports.push({
+        workerId: report.workerId,
+        workerName: worker?.fullName ?? 'Unknown worker',
+        reportType: report.reportType,
+        note: report.note ?? null,
+        photoUrl: report.photoUrl,
+        photoUrls: Array.isArray(report.photoUrls) ? report.photoUrls as string[] : (report.photoUrl ? [report.photoUrl] : []),
+        createdAt: report.createdAt
+      });
+    }
+
+    const days = Array.from(dayMap.values())
+      .sort((left, right) => left.date.localeCompare(right.date))
+      .map((day) => ({
+        date: day.date,
+        totalMinutes: day.totalMinutes,
+        totalEarnedOre: day.totalEarnedOre,
+        workers: Array.from(day.workers.values()).sort((left, right) => left.workerName.localeCompare(right.workerName)),
+        reports: day.reports
+      }));
+
+    res.json({ month, days });
+  });
+
   app.post('/api/v1/integrations/google-sheets/sync-month', authMiddleware, async (req, res) => {
     if (!requireAdminRole(req, res)) {
       return;
