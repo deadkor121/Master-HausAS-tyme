@@ -5,12 +5,25 @@ import dotenv from 'dotenv';
 import { compare, hash } from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
-import { pathToFileURL } from 'node:url';
+import { google } from 'googleapis';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { dirname, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { prisma } from './db.js';
 import { getWorkerNotificationConfig, sendWorkerNotification } from './notifications.js';
 
-dotenv.config();
+const envPathCandidates = [
+  resolve(process.cwd(), '.env'),
+  resolve(process.cwd(), 'apps', 'api', '.env'),
+  resolve(dirname(fileURLToPath(import.meta.url)), '..', '.env')
+];
+
+for (const envPath of envPathCandidates) {
+  const result = dotenv.config({ path: envPath });
+  if (!result.error) {
+    break;
+  }
+}
 
 declare global {
   namespace Express {
@@ -272,6 +285,10 @@ const changePasswordSchema = z.object({
   newPassword: z.string().min(6)
 });
 
+const refreshTokenSchema = z.object({
+  refreshToken: z.string().min(1)
+});
+
 function toLocalDateKey(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
@@ -326,6 +343,10 @@ function buildWorkLogData(payload: { workDate: string; startedAt: string; endedA
   };
 }
 
+function toFixedHours(minutes: number) {
+  return Math.round((minutes / 60) * 100) / 100;
+}
+
 function requireAdminRole(req: express.Request, res: express.Response) {
   if (!req.user || req.user.role !== 'admin') {
     res.status(403).json({ error: 'Forbidden' });
@@ -363,8 +384,12 @@ async function resolveWorkerIdForUser(fullName: string, role: string) {
   return matched?.id;
 }
 
-function signToken(payload: object) {
+function signAccessToken(payload: object) {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: '15m' });
+}
+
+function signRefreshToken(userId: string) {
+  return jwt.sign({ sub: userId, type: 'refresh' }, JWT_SECRET, { expiresIn: '30d' });
 }
 
 function authMiddleware(req: express.Request, res: express.Response, next: express.NextFunction) {
@@ -376,7 +401,11 @@ function authMiddleware(req: express.Request, res: express.Response, next: expre
 
   const token = header.slice(7);
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as { sub: string; role: string; email?: string; fullName?: string; workerId?: string };
+    const decoded = jwt.verify(token, JWT_SECRET) as { sub: string; role: string; email?: string; fullName?: string; workerId?: string; type?: string };
+    if (decoded.type === 'refresh') {
+      res.status(401).json({ error: 'Invalid token' });
+      return;
+    }
     req.user = {
       id: decoded.sub,
       role: decoded.role,
@@ -504,8 +533,8 @@ export function createApp() {
       workerId = worker.id;
     }
 
-    const accessToken = signToken({ sub: user.id, role: user.role, email: user.email, fullName: user.fullName, workerId });
-    const refreshToken = signToken({ sub: user.id, type: 'refresh' });
+    const accessToken = signAccessToken({ sub: user.id, role: user.role, email: user.email, fullName: user.fullName, workerId });
+    const refreshToken = signRefreshToken(user.id);
 
     res.status(201).json({
       accessToken,
@@ -544,10 +573,51 @@ export function createApp() {
     }
 
     const workerId = await resolveWorkerIdForUser(user.fullName, user.role);
-    const accessToken = signToken({ sub: user.id, role: user.role, email: user.email, fullName: user.fullName, workerId });
-    const refreshToken = signToken({ sub: user.id, type: 'refresh' });
+    const accessToken = signAccessToken({ sub: user.id, role: user.role, email: user.email, fullName: user.fullName, workerId });
+    const refreshToken = signRefreshToken(user.id);
 
     res.json({ accessToken, refreshToken, user: { id: user.id, email: user.email, role: user.role, fullName: user.fullName, workerId, emailNotificationsEnabled: user.emailNotificationsEnabled } });
+  });
+
+  app.post('/api/v1/auth/refresh', async (req, res) => {
+    const parsed = refreshTokenSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.flatten() });
+      return;
+    }
+
+    try {
+      const decoded = jwt.verify(parsed.data.refreshToken, JWT_SECRET) as { sub?: string; type?: string };
+      if (decoded.type !== 'refresh' || !decoded.sub) {
+        res.status(401).json({ error: 'Invalid refresh token' });
+        return;
+      }
+
+      const user = await prisma.user.findUnique({ where: { id: decoded.sub } });
+      if (!user) {
+        res.status(401).json({ error: 'Invalid refresh token' });
+        return;
+      }
+
+      const workerId = await resolveWorkerIdForUser(user.fullName, user.role);
+      const accessToken = signAccessToken({ sub: user.id, role: user.role, email: user.email, fullName: user.fullName, workerId });
+      const refreshToken = signRefreshToken(user.id);
+
+      res.json({
+        accessToken,
+        refreshToken,
+        user: {
+          id: user.id,
+          email: user.email,
+          role: user.role,
+          fullName: user.fullName,
+          workerId,
+          emailNotificationsEnabled: user.emailNotificationsEnabled
+        }
+      });
+    } catch {
+      res.status(401).json({ error: 'Invalid refresh token' });
+    }
   });
 
   app.get('/api/v1/auth/me', authMiddleware, async (req, res) => {
@@ -664,6 +734,144 @@ export function createApp() {
     });
 
     res.json({ items });
+  });
+
+  app.post('/api/v1/integrations/google-sheets/sync-month', authMiddleware, async (req, res) => {
+    if (!requireAdminRole(req, res)) {
+      return;
+    }
+
+    const month = typeof req.query.month === 'string' ? req.query.month : toMonthKey(new Date());
+    if (!/^\d{4}-\d{2}$/.test(month)) {
+      res.status(400).json({ error: 'Month must match YYYY-MM format' });
+      return;
+    }
+
+    const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
+    const serviceAccountEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+    const serviceAccountPrivateKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?.replace(/\\n/g, '\n');
+
+    if (!spreadsheetId || !serviceAccountEmail || !serviceAccountPrivateKey) {
+      res.status(400).json({ error: 'Google Sheets integration is not configured on server' });
+      return;
+    }
+
+    const [year, monthNumber] = month.split('-').map(Number);
+    const monthStart = new Date(year, monthNumber - 1, 1, 0, 0, 0, 0);
+    const monthEnd = new Date(year, monthNumber, 1, 0, 0, 0, 0);
+    const daysInMonth = new Date(year, monthNumber, 0).getDate();
+    const sheetName = typeof req.query.sheetName === 'string' && req.query.sheetName.trim().length > 0
+      ? req.query.sheetName.trim()
+      : month;
+
+    const [workers, logs] = await Promise.all([
+      prisma.worker.findMany({ orderBy: { fullName: 'asc' } }),
+      prisma.workLog.findMany({
+        where: {
+          workDate: {
+            gte: monthStart,
+            lt: monthEnd
+          }
+        },
+        orderBy: [{ workerId: 'asc' }, { workDate: 'asc' }]
+      })
+    ]);
+
+    const workerMap = new Map<string, { fullName: string; minutesByDay: number[]; totalMinutes: number }>();
+    for (const worker of workers) {
+      workerMap.set(worker.id, {
+        fullName: worker.fullName,
+        minutesByDay: Array.from({ length: 31 }, () => 0),
+        totalMinutes: 0
+      });
+    }
+
+    for (const log of logs) {
+      const worker = workerMap.get(log.workerId);
+      if (!worker) {
+        continue;
+      }
+
+      const day = Number(toLocalDateKey(log.workDate).slice(8, 10));
+      if (!Number.isFinite(day) || day < 1 || day > 31) {
+        continue;
+      }
+
+      worker.minutesByDay[day - 1] += log.totalMinutes;
+      worker.totalMinutes += log.totalMinutes;
+    }
+
+    const header = ['Работник', ...Array.from({ length: 31 }, (_, index) => String(index + 1)), 'Часы', 'Минуты'];
+    const values: Array<Array<string | number>> = [header];
+
+    for (const worker of workerMap.values()) {
+      const hasAnyMinutes = worker.totalMinutes > 0;
+      if (!hasAnyMinutes) {
+        continue;
+      }
+
+      const dayHours = worker.minutesByDay.map((minutes, dayIndex) => {
+        if (dayIndex >= daysInMonth) {
+          return '';
+        }
+        return minutes > 0 ? toFixedHours(minutes) : '';
+      });
+
+      values.push([
+        worker.fullName,
+        ...dayHours,
+        toFixedHours(worker.totalMinutes),
+        worker.totalMinutes
+      ]);
+    }
+
+    const auth = new google.auth.JWT({
+      email: serviceAccountEmail,
+      key: serviceAccountPrivateKey,
+      scopes: ['https://www.googleapis.com/auth/spreadsheets']
+    });
+    const sheets = google.sheets({ version: 'v4', auth });
+
+    try {
+      const spreadsheet = await sheets.spreadsheets.get({
+        spreadsheetId,
+        includeGridData: false
+      });
+      const existingSheetNames = new Set(
+        (spreadsheet.data.sheets ?? [])
+          .map((entry) => entry.properties?.title)
+          .filter((title): title is string => typeof title === 'string')
+      );
+
+      if (!existingSheetNames.has(sheetName)) {
+        await sheets.spreadsheets.batchUpdate({
+          spreadsheetId,
+          requestBody: {
+            requests: [{ addSheet: { properties: { title: sheetName } } }]
+          }
+        });
+      }
+
+      await sheets.spreadsheets.values.clear({
+        spreadsheetId,
+        range: `'${sheetName}'!A:AH`
+      });
+
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `'${sheetName}'!A1`,
+        valueInputOption: 'RAW',
+        requestBody: {
+          values
+        }
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to sync Google Sheets';
+      res.status(500).json({ error: message });
+      return;
+    }
+
+    res.json({ ok: true, month, sheetName, rowsSynced: Math.max(0, values.length - 1) });
   });
 
   app.post('/api/v1/workers', authMiddleware, async (req, res) => {

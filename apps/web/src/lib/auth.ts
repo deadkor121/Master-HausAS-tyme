@@ -2,6 +2,7 @@ import axios, { isAxiosError } from 'axios';
 import { API_BASE } from './apiBase';
 
 const ACCESS_TOKEN_KEY = 'accessToken';
+const REFRESH_TOKEN_KEY = 'refreshToken';
 const USER_KEY = 'authUser';
 const ACCESS_TOKEN_HEADER = 'authorization';
 const BEARER_PREFIX = 'Bearer ';
@@ -28,6 +29,12 @@ export type RegisterPayload = {
   bio?: string;
 };
 
+type AuthResponsePayload = {
+  accessToken?: string;
+  refreshToken?: string;
+  user?: AuthUser;
+};
+
 function setAxiosToken(token: string | null) {
   if (token) {
     axios.defaults.headers.common[ACCESS_TOKEN_HEADER] = `${BEARER_PREFIX}${token}`;
@@ -40,6 +47,15 @@ export function getStoredToken(): string | null {
   const raw = localStorage.getItem(ACCESS_TOKEN_KEY);
   if (!raw || raw === 'undefined' || raw === 'null' || raw.trim().length === 0) {
     localStorage.removeItem(ACCESS_TOKEN_KEY);
+    return null;
+  }
+  return raw;
+}
+
+export function getStoredRefreshToken(): string | null {
+  const raw = localStorage.getItem(REFRESH_TOKEN_KEY);
+  if (!raw || raw === 'undefined' || raw === 'null' || raw.trim().length === 0) {
+    localStorage.removeItem(REFRESH_TOKEN_KEY);
     return null;
   }
   return raw;
@@ -59,56 +75,135 @@ export function getStoredUser(): AuthUser | null {
   }
 }
 
-export function persistAuth(token: string, user: AuthUser) {
+export function persistAuth(token: string, user: AuthUser, refreshToken?: string) {
   localStorage.setItem(ACCESS_TOKEN_KEY, token);
   localStorage.setItem(USER_KEY, JSON.stringify(user));
+  if (refreshToken && refreshToken.trim().length > 0) {
+    localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+  }
   setAxiosToken(token);
 }
 
 export function clearAuth() {
   localStorage.removeItem(ACCESS_TOKEN_KEY);
+  localStorage.removeItem(REFRESH_TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
   setAxiosToken(null);
 }
 
+let refreshPromise: Promise<string | null> | null = null;
+
+async function refreshAccessToken(): Promise<string | null> {
+  const storedRefreshToken = getStoredRefreshToken();
+  if (!storedRefreshToken) {
+    clearAuth();
+    return null;
+  }
+
+  const response = await axios.post(`${API_BASE}/api/v1/auth/refresh`, {
+    refreshToken: storedRefreshToken
+  });
+  const payload = (response.data ?? {}) as AuthResponsePayload;
+
+  if (!payload.accessToken || !payload.user || !payload.refreshToken) {
+    clearAuth();
+    return null;
+  }
+
+  persistAuth(payload.accessToken, payload.user, payload.refreshToken);
+  return payload.accessToken;
+}
+
+axios.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    if (!isAxiosError(error) || error.response?.status !== 401) {
+      return Promise.reject(error);
+    }
+
+    const originalRequest = error.config as (typeof error.config & { _retry?: boolean }) | undefined;
+    if (!originalRequest || originalRequest._retry) {
+      return Promise.reject(error);
+    }
+
+    const requestUrl = String(originalRequest.url ?? '');
+    if (requestUrl.includes('/api/v1/auth/login') || requestUrl.includes('/api/v1/auth/register') || requestUrl.includes('/api/v1/auth/refresh')) {
+      return Promise.reject(error);
+    }
+
+    originalRequest._retry = true;
+
+    try {
+      if (!refreshPromise) {
+        refreshPromise = refreshAccessToken().finally(() => {
+          refreshPromise = null;
+        });
+      }
+
+      const nextAccessToken = await refreshPromise;
+      if (!nextAccessToken) {
+        return Promise.reject(error);
+      }
+
+      originalRequest.headers = originalRequest.headers ?? {};
+      originalRequest.headers[ACCESS_TOKEN_HEADER] = `${BEARER_PREFIX}${nextAccessToken}`;
+      return axios(originalRequest);
+    } catch {
+      clearAuth();
+      return Promise.reject(error);
+    }
+  }
+);
+
 export async function login(email: string, password: string) {
   const response = await axios.post(`${API_BASE}/api/v1/auth/login`, { email, password });
   const accessToken = response.data?.accessToken as string;
+  const refreshToken = response.data?.refreshToken as string;
   const user = response.data?.user as AuthUser;
 
-  if (!accessToken || !user) {
+  if (!accessToken || !refreshToken || !user) {
     throw new Error('Login response is incomplete');
   }
 
-  persistAuth(accessToken, user);
+  persistAuth(accessToken, user, refreshToken);
   return user;
 }
 
 export async function register(payload: RegisterPayload) {
   const response = await axios.post(`${API_BASE}/api/v1/auth/register`, payload);
   const accessToken = response.data?.accessToken as string;
+  const refreshToken = response.data?.refreshToken as string;
   const user = response.data?.user as AuthUser;
 
-  if (!accessToken || !user) {
+  if (!accessToken || !refreshToken || !user) {
     throw new Error('Register response is incomplete');
   }
 
-  persistAuth(accessToken, user);
+  persistAuth(accessToken, user, refreshToken);
   return user;
 }
 
 export async function restoreSession(): Promise<AuthUser | null> {
   const token = getStoredToken();
   if (!token) {
+    const refreshed = await refreshAccessToken();
+    if (!refreshed) {
+      clearAuth();
+      return null;
+    }
+  }
+
+  const currentToken = getStoredToken();
+  if (!currentToken) {
     clearAuth();
     return null;
   }
 
-  setAxiosToken(token);
+  setAxiosToken(currentToken);
 
   try {
     const response = await axios.get(`${API_BASE}/api/v1/auth/me`, {
-      headers: { [ACCESS_TOKEN_HEADER]: `${BEARER_PREFIX}${token}` }
+      headers: { [ACCESS_TOKEN_HEADER]: `${BEARER_PREFIX}${currentToken}` }
     });
 
     const user = response.data?.user as AuthUser | undefined;
@@ -134,7 +229,7 @@ export async function updateAuthSettings(payload: { emailNotificationsEnabled: b
   if (!user) {
     throw new Error('Settings response is incomplete');
   }
-  persistAuth(token, user);
+  persistAuth(token, user, getStoredRefreshToken() ?? undefined);
   return user;
 }
 

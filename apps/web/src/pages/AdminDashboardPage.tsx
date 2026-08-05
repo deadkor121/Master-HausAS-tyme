@@ -5,6 +5,11 @@ import { ensureAccessToken } from '../lib/auth';
 import AdminShell from '../components/AdminShell';
 import TeamGeoMap from '../components/TeamGeoMap';
 
+function getCurrentMonthKey() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
 type GeoStatusItem = {
   workerId: string;
   workerName: string;
@@ -34,6 +39,9 @@ type GeoStatusItem = {
 export default function AdminDashboardPage() {
   const [workersGeo, setWorkersGeo] = useState<GeoStatusItem[]>([]);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
+  const [selectedSyncMonth, setSelectedSyncMonth] = useState(getCurrentMonthKey());
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<string | null>(null);
 
   useEffect(() => {
     const refreshMs = Number(new URLSearchParams(window.location.search).get('refreshMs') ?? 45000);
@@ -88,8 +96,50 @@ export default function AdminDashboardPage() {
         <div className="rounded-[2rem] border border-white/10 bg-white/5 p-6">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-2xl font-semibold">Карта мастеров</h2>
-            <p className="text-xs text-slate-500">Обновление каждые 45 сек{lastUpdatedAt ? ` • Последнее: ${lastUpdatedAt}` : ''}</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="text-xs text-slate-400" htmlFor="sync-month">Месяц</label>
+              <input
+                id="sync-month"
+                type="month"
+                className="rounded-md border border-white/15 bg-slate-900/60 px-2 py-1 text-sm text-slate-100"
+                value={selectedSyncMonth}
+                onChange={(event) => setSelectedSyncMonth(event.target.value)}
+              />
+              <button
+                type="button"
+                className="rounded-md border border-emerald-400/30 bg-emerald-500/15 px-3 py-1 text-sm font-medium text-emerald-200 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={isSyncing || !selectedSyncMonth}
+                onClick={async () => {
+                  setSyncStatus(null);
+                  setIsSyncing(true);
+                  try {
+                    const token = ensureAccessToken();
+                    const response = await axios.post(
+                      `${API_BASE}/api/v1/integrations/google-sheets/sync-month`,
+                      {},
+                      {
+                        params: { month: selectedSyncMonth },
+                        headers: { Authorization: `Bearer ${token}` }
+                      }
+                    );
+                    const rowsSynced = Number(response.data?.rowsSynced ?? 0);
+                    setSyncStatus(`Синхронизация завершена: ${selectedSyncMonth}, строк: ${rowsSynced}`);
+                  } catch (error: any) {
+                    const message = typeof error?.response?.data?.error === 'string'
+                      ? error.response.data.error
+                      : (error instanceof Error ? error.message : 'Неизвестная ошибка синка');
+                    setSyncStatus(`Ошибка синхронизации: ${message}`);
+                  } finally {
+                    setIsSyncing(false);
+                  }
+                }}
+              >
+                {isSyncing ? 'Синхронизация...' : 'Синхронизировать'}
+              </button>
+              <p className="text-xs text-slate-500">Обновление каждые 45 сек{lastUpdatedAt ? ` • Последнее: ${lastUpdatedAt}` : ''}</p>
+            </div>
           </div>
+          {syncStatus ? <p className="mb-3 text-xs text-slate-300">{syncStatus}</p> : null}
           <TeamGeoMap items={mapItems} />
         </div>
 

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { API_BASE } from '../lib/apiBase';
-import { ensureAccessToken, describeAxiosError } from '../lib/auth';
+import { ensureAccessToken, describeAxiosError, handleAuthError } from '../lib/auth';
 import { useAuth } from '../lib/AuthContext';
 import WorkerShell from '../components/WorkerShell';
 import AdminShell from '../components/AdminShell';
@@ -146,6 +146,7 @@ export default function WorkerAttendancePage() {
   const [isFinishingShift, setIsFinishingShift] = useState(false);
   const [isSavingReport, setIsSavingReport] = useState(false);
   const [nowTick, setNowTick] = useState(Date.now());
+  const [isSyncingSheets, setIsSyncingSheets] = useState(false);
 
   const isWorkerOnly = user?.role === 'worker';
 
@@ -301,6 +302,11 @@ export default function WorkerAttendancePage() {
 
           await loadWorkSite(selectedWorkerId);
         } catch (error) {
+          if (handleAuthError(error)) {
+            setIsGeoTracking(false);
+            setFeedback({ type: 'error', text: 'Сессия истекла. Войдите снова, чтобы продолжить геоконтроль.' });
+            return;
+          }
           setFeedback({ type: 'error', text: describeAxiosError(error) });
         }
       },
@@ -696,6 +702,25 @@ export default function WorkerAttendancePage() {
     }
   };
 
+  const syncMonthToGoogleSheets = async () => {
+    setIsSyncingSheets(true);
+    try {
+      const token = ensureAccessToken();
+      const response = await axios.post(
+        `${API_BASE}/api/v1/integrations/google-sheets/sync-month?month=${selectedMonth}`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      const rowsSynced = Number(response.data?.rowsSynced ?? 0);
+      setFeedback({ type: 'success', text: `Таблица Google Sheets обновлена: ${rowsSynced} сотрудников за ${selectedMonth}.` });
+    } catch (error) {
+      setFeedback({ type: 'error', text: describeAxiosError(error) });
+    } finally {
+      setIsSyncingSheets(false);
+    }
+  };
+
   const content = (
     <>
       <div className="grid gap-4 md:grid-cols-4">
@@ -715,6 +740,16 @@ export default function WorkerAttendancePage() {
         <div className="rounded-[1.75rem] border border-white/10 bg-white/5 p-5">
           <p className="text-xs uppercase tracking-[0.25em] text-slate-500">Месяц</p>
           <input className="mt-3 w-full rounded-2xl border border-white/10 bg-slate-950/60 px-3 py-3 text-sm" type="month" value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)} />
+          {!isWorkerOnly ? (
+            <button
+              type="button"
+              className="mt-3 w-full rounded-2xl border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-xs font-semibold text-cyan-100 disabled:opacity-70"
+              onClick={syncMonthToGoogleSheets}
+              disabled={isSyncingSheets}
+            >
+              {isSyncingSheets ? 'Синхронизация...' : 'Синхронизировать в Google Sheets'}
+            </button>
+          ) : null}
         </div>
       </div>
 
