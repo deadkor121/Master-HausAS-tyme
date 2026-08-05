@@ -93,6 +93,14 @@ function formatTimeLabel(isoString: string) {
   return new Date(isoString).toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
 }
 
+function formatElapsedTimer(totalSeconds: number) {
+  const safeSeconds = Math.max(0, totalSeconds);
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const seconds = safeSeconds % 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
 function buildCalendarDays(month: string) {
   const [year, monthIndex] = month.split('-').map(Number);
   const firstDay = new Date(year, monthIndex - 1, 1);
@@ -137,6 +145,7 @@ export default function WorkerAttendancePage() {
   const [isStartingShift, setIsStartingShift] = useState(false);
   const [isFinishingShift, setIsFinishingShift] = useState(false);
   const [isSavingReport, setIsSavingReport] = useState(false);
+  const [nowTick, setNowTick] = useState(Date.now());
 
   const isWorkerOnly = user?.role === 'worker';
 
@@ -228,6 +237,20 @@ export default function WorkerAttendancePage() {
       setIsGeoTracking(false);
     }
   }, [workSite?.id, workSite?.geolocationEnabled]);
+
+  useEffect(() => {
+    if (!workSite?.isShiftActive || !workSite?.shiftStartedAt) {
+      return;
+    }
+
+    const timerId = window.setInterval(() => {
+      setNowTick(Date.now());
+    }, 1000);
+
+    return () => {
+      window.clearInterval(timerId);
+    };
+  }, [workSite?.isShiftActive, workSite?.shiftStartedAt]);
 
   useEffect(() => {
     if (!isGeoTracking || !workSite || !selectedWorkerId) {
@@ -614,6 +637,11 @@ export default function WorkerAttendancePage() {
   const draftSitePoint = Number.isFinite(draftLatitude) && Number.isFinite(draftLongitude)
     ? { latitude: draftLatitude, longitude: draftLongitude }
     : null;
+  const shiftStartedAtDate = workSite?.shiftStartedAt ? new Date(workSite.shiftStartedAt) : null;
+  const isShiftRunning = Boolean(workSite?.isShiftActive && shiftStartedAtDate && !Number.isNaN(shiftStartedAtDate.getTime()));
+  const elapsedShiftSeconds = isShiftRunning && shiftStartedAtDate
+    ? Math.floor((nowTick - shiftStartedAtDate.getTime()) / 1000)
+    : 0;
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -692,12 +720,26 @@ export default function WorkerAttendancePage() {
 
       {feedback ? <div className={`mt-4 rounded-2xl border px-4 py-3 text-sm ${feedback.type === 'success' ? 'border-emerald-700/40 bg-emerald-500/10 text-emerald-200' : 'border-rose-700/40 bg-rose-500/10 text-rose-200'}`}>{feedback.text}</div> : null}
 
+      {isWorkerOnly ? (
+        <div className="mt-4 grid gap-4 rounded-[2rem] border border-cyan-400/30 bg-cyan-500/10 p-5 md:grid-cols-[1fr_auto] md:items-center">
+          <div>
+            <p className="text-xs uppercase tracking-[0.2em] text-cyan-200">Учет времени смены</p>
+            <p className="mt-2 text-sm text-cyan-100">{isShiftRunning ? 'Смена запущена. Таймер идет в реальном времени.' : 'Смена не запущена. Следуйте шагам ниже.'}</p>
+            {workSite?.shiftStartedAt ? <p className="mt-2 text-xs text-cyan-200/80">Старт: {new Date(workSite.shiftStartedAt).toLocaleString('ru-RU')}</p> : null}
+          </div>
+          <div className="rounded-2xl border border-cyan-300/40 bg-slate-950/50 px-5 py-3 text-center">
+            <p className="text-xs uppercase tracking-[0.2em] text-cyan-200">Таймер</p>
+            <p className="mt-1 text-3xl font-semibold text-cyan-300">{isShiftRunning ? formatElapsedTimer(elapsedShiftSeconds) : '00:00:00'}</p>
+          </div>
+        </div>
+      ) : null}
+
       <div className="mt-6 grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
         <div className="space-y-6">
           <div className="grid gap-4 rounded-[2rem] border border-white/10 bg-white/5 p-5 md:p-6">
             <div>
-              <h2 className="text-2xl font-semibold">Геолокация рабочего места</h2>
-              <p className="mt-2 text-sm text-slate-400">Карта всегда активна: укажите адрес или поставьте точку кликом по карте, затем сохраните объект.</p>
+              <h2 className="text-2xl font-semibold">{isWorkerOnly ? 'Шаг 1. Укажите место работы' : 'Геолокация рабочего места'}</h2>
+              <p className="mt-2 text-sm text-slate-400">{isWorkerOnly ? 'Введите адрес или поставьте точку на карте, затем сохраните адрес работ.' : 'Карта всегда активна: укажите адрес или поставьте точку кликом по карте, затем сохраните объект.'}</p>
             </div>
 
             <div className="grid gap-3">
@@ -724,10 +766,11 @@ export default function WorkerAttendancePage() {
             />
 
             <div className="grid gap-3 rounded-2xl border border-white/10 bg-slate-950/30 p-4">
-              <p className="text-sm text-slate-300">Управление геолокацией смены</p>
-              <textarea className="min-h-20 rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm" value={geoDisableReason} onChange={(event) => setGeoDisableReason(event.target.value)} placeholder="Причина отключения геолокации (обязательно для выключения)" />
+              <p className="text-sm text-slate-300">{isWorkerOnly ? 'Шаг 2. Включите геолокацию' : 'Управление геолокацией смены'}</p>
+              <p className="text-xs text-slate-500">{isWorkerOnly ? 'После сохранения адреса включите геолокацию и запустите геоконтроль.' : 'Отключение геолокации требует причины и отображается в админ-панели.'}</p>
+              {!isWorkerOnly ? <textarea className="min-h-20 rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm" value={geoDisableReason} onChange={(event) => setGeoDisableReason(event.target.value)} placeholder="Причина отключения геолокации (обязательно для выключения)" /> : null}
               <div className="flex flex-wrap gap-3">
-                <button type="button" className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-rose-100 disabled:opacity-70" onClick={() => updateGeolocationState(false)} disabled={!workSite || isUpdatingGeoState}>Выключить геолокацию</button>
+                {!isWorkerOnly ? <button type="button" className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-rose-100 disabled:opacity-70" onClick={() => updateGeolocationState(false)} disabled={!workSite || isUpdatingGeoState}>Выключить геолокацию</button> : null}
                 <button type="button" className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-emerald-100 disabled:opacity-70" onClick={() => updateGeolocationState(true)} disabled={!workSite || isUpdatingGeoState}>Включить геолокацию / Продолжить смену</button>
               </div>
             </div>
@@ -747,8 +790,8 @@ export default function WorkerAttendancePage() {
 
           <div className="grid gap-4 rounded-[2rem] border border-white/10 bg-white/5 p-5 md:p-6">
             <div>
-              <h2 className="text-2xl font-semibold">Смена и фотоотчеты</h2>
-              <p className="mt-2 text-sm text-slate-400">Старт смены: фото + план на день. Завершение смены: фото + итог. Время попадет в календарь автоматически.</p>
+              <h2 className="text-2xl font-semibold">{isWorkerOnly ? 'Шаг 3. Начало и завершение смены' : 'Смена и фотоотчеты'}</h2>
+              <p className="mt-2 text-sm text-slate-400">{isWorkerOnly ? 'Сначала начните смену: добавьте фото и план работ. В конце дня завершите смену с фото и итогом.' : 'Старт смены: фото + план на день. Завершение смены: фото + итог. Время попадет в календарь автоматически.'}</p>
             </div>
 
             <div className="rounded-2xl border border-white/10 bg-slate-950/40 p-4 text-sm text-slate-300">
@@ -758,7 +801,7 @@ export default function WorkerAttendancePage() {
             </div>
 
             <div className="grid gap-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4">
-              <p className="text-sm text-emerald-100">Начать работу</p>
+              <p className="text-sm text-emerald-100">{isWorkerOnly ? '3.1 Начать работу' : 'Начать работу'}</p>
               <input className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3" type="file" accept="image/*" multiple onChange={(event) => uploadShiftPhotos(event, 'start')} />
               {shiftStartForm.photoUrls.length > 0 ? (
                 <div className="grid gap-2 sm:grid-cols-2">
@@ -775,7 +818,7 @@ export default function WorkerAttendancePage() {
             </div>
 
             <div className="grid gap-3 rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4">
-              <p className="text-sm text-rose-100">Закончить работу</p>
+              <p className="text-sm text-rose-100">{isWorkerOnly ? '3.2 Закончить работу' : 'Закончить работу'}</p>
               <input className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3" type="file" accept="image/*" multiple onChange={(event) => uploadShiftPhotos(event, 'end')} />
               {shiftEndForm.photoUrls.length > 0 ? (
                 <div className="grid gap-2 sm:grid-cols-2">
