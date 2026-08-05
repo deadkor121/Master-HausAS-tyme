@@ -761,7 +761,8 @@ export function createApp() {
   });
 
   app.post('/api/v1/uploads/worker-photo/sign', authMiddleware, async (req, res) => {
-    if (!requireAdminRole(req, res)) {
+    if (!req.user) {
+      res.status(401).json({ error: 'Unauthorized' });
       return;
     }
 
