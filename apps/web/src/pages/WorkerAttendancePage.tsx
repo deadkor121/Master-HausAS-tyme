@@ -649,6 +649,11 @@ export default function WorkerAttendancePage() {
     ? Math.floor((nowTick - shiftStartedAtDate.getTime()) / 1000)
     : 0;
   const displayRadiusMeters = Math.max(5, Number(workSite?.radiusMeters ?? 5));
+  const latestShiftLog = workLogs
+    .slice()
+    .sort((left, right) => new Date(right.startedAt).getTime() - new Date(left.startedAt).getTime())[0] ?? null;
+  const displayShiftStartedAt = workSite?.shiftStartedAt ?? latestShiftLog?.startedAt ?? null;
+  const displayShiftEndedAt = workSite?.shiftEndedAt ?? latestShiftLog?.endedAt ?? null;
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -761,7 +766,7 @@ export default function WorkerAttendancePage() {
           <div>
             <p className="text-xs uppercase tracking-[0.2em] text-cyan-200">Учет времени смены</p>
             <p className="mt-2 text-sm text-cyan-100">{isShiftRunning ? 'Смена запущена. Таймер идет в реальном времени.' : 'Смена не запущена. Следуйте шагам ниже.'}</p>
-            {workSite?.shiftStartedAt ? <p className="mt-2 text-xs text-cyan-200/80">Старт: {new Date(workSite.shiftStartedAt).toLocaleString('ru-RU')}</p> : null}
+            {displayShiftStartedAt ? <p className="mt-2 text-xs text-cyan-200/80">Старт: {new Date(displayShiftStartedAt).toLocaleString('ru-RU')}</p> : null}
           </div>
           <div className="rounded-2xl border border-cyan-300/40 bg-slate-950/50 px-5 py-3 text-center">
             <p className="text-xs uppercase tracking-[0.2em] text-cyan-200">Таймер</p>
@@ -832,8 +837,8 @@ export default function WorkerAttendancePage() {
 
             <div className="rounded-2xl border border-white/10 bg-slate-950/40 p-4 text-sm text-slate-300">
               <p><span className="text-slate-500">Статус смены:</span> {workSite?.isShiftActive ? 'активна' : 'не активна'}</p>
-              <p><span className="text-slate-500">Начало:</span> {workSite?.shiftStartedAt ? new Date(workSite.shiftStartedAt).toLocaleString('ru-RU') : 'еще не начата'}</p>
-              <p><span className="text-slate-500">Окончание:</span> {workSite?.shiftEndedAt ? new Date(workSite.shiftEndedAt).toLocaleString('ru-RU') : 'еще не завершена'}</p>
+              <p><span className="text-slate-500">Начало:</span> {displayShiftStartedAt ? new Date(displayShiftStartedAt).toLocaleString('ru-RU') : 'еще не начата'}</p>
+              <p><span className="text-slate-500">Окончание:</span> {displayShiftEndedAt ? new Date(displayShiftEndedAt).toLocaleString('ru-RU') : 'еще не завершена'}</p>
             </div>
 
             <div className="grid gap-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4">

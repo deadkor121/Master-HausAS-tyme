@@ -1007,10 +1007,35 @@ export function createApp() {
       return;
     }
 
-    const activeShiftSite = await prisma.workSite.findFirst({
+    let activeShiftSite = await prisma.workSite.findFirst({
       where: { workerId, isShiftActive: true },
       orderBy: { shiftStartedAt: 'desc' }
     });
+
+    if (activeShiftSite && activeShiftSite.shiftStartedAt && !activeShiftSite.shiftEndedAt) {
+      const endReports = await prisma.workPhotoReport.findMany({
+        where: {
+          workerId,
+          workSiteId: activeShiftSite.id,
+          reportType: 'end'
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 1
+      });
+      const endReport = endReports[0] ?? null;
+
+      if (endReport && endReport.createdAt.getTime() >= activeShiftSite.shiftStartedAt.getTime()) {
+        const closedAt = endReport.createdAt;
+        activeShiftSite = await prisma.workSite.update({
+          where: { id: activeShiftSite.id },
+          data: {
+            isShiftActive: false,
+            shiftEndedAt: closedAt,
+            leftAt: closedAt
+          }
+        });
+      }
+    }
 
     const latestShiftSite = activeShiftSite ?? await prisma.workSite.findFirst({
       where: { workerId, shiftStartedAt: { not: null } },
