@@ -250,12 +250,16 @@ export default function WorkerAttendancePage() {
       async (position) => {
         try {
           const token = ensureAccessToken();
+          const rawAccuracy = position.coords.accuracy;
+          const normalizedAccuracy = Number.isFinite(rawAccuracy) && rawAccuracy >= 0
+            ? Math.min(rawAccuracy, 10000)
+            : undefined;
           const response = await axios.post(
             `${API_BASE}/api/v1/work-sites/${workSite.id}/pings`,
             {
               latitude: position.coords.latitude,
               longitude: position.coords.longitude,
-              accuracyMeters: position.coords.accuracy
+              accuracyMeters: normalizedAccuracy
             },
             { headers: { Authorization: `Bearer ${token}` } }
           );
